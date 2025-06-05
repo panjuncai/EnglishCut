@@ -121,26 +121,24 @@ def transcribe(inputs, task):
 mf_transcribe = gr.Interface(
     fn=transcribe,  # 执行转录的函数
     inputs=[
-        gr.Audio(sources="microphone", type="filepath", label="麦克风输入"),  # 使用麦克风录制的音频输入
-        gr.Radio(["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
+        gr.Audio(source="microphone", type="filepath", label="麦克风输入"),  # 使用麦克风录制的音频输入
+        gr.Radio(choices=["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
     ],
-    outputs="text",  # 输出为文本
+    outputs=gr.Textbox(label="识别结果"),  # 输出为文本
     title="Whisper Large V3: 语音识别",  # 接口标题
     description="使用麦克风录制音频并进行语音识别或翻译。",  # 接口描述
-    flagging_mode="never",  # 禁用标记功能
 )
 
 # 定义文件上传的接口实例，用于处理上传的音频文件
 file_transcribe = gr.Interface(
     fn=transcribe,  # 执行转录的函数
     inputs=[
-        gr.Audio(sources="upload", type="filepath", label="上传音频文件"),  # 上传的音频文件输入
-        gr.Radio(["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
+        gr.Audio(source="upload", type="filepath", label="上传音频文件"),  # 上传的音频文件输入
+        gr.Radio(choices=["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
     ],
-    outputs="text",  # 输出为文本
+    outputs=gr.Textbox(label="识别结果"),  # 输出为文本
     title="Whisper Large V3: 转录音频文件",  # 接口标题
     description="上传音频文件（WAV、FLAC 或 MP3）并进行语音识别或翻译。",  # 接口描述
-    flagging_mode="never",  # 禁用标记功能
 )
 
 # 仅当此脚本作为主程序运行时，执行 Gradio 应用的启动代码
