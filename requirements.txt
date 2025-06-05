@@ -1,0 +1,6 @@
+loguru==0.7.2
+gradio==5.1.0
+torch==2.5.0
+transformers==4.46.0
+soundfile==0.12.1
+ffmpeg==1.4
