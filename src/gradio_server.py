@@ -1,5 +1,8 @@
-import gradio as gr
 import os
+# 设置环境变量以解决 OpenMP 冲突
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+import gradio as gr
 from openai_whisper import asr, transcribe
 from logger import LOG
 
@@ -8,15 +11,16 @@ def process_audio(message, history):
         texts = []
         
         # 获取上传的文件列表，处理音频文件
-        for uploaded_file in message.get("files", []):
-            file_ext = os.path.splitext(uploaded_file)[1].lower()
-            if file_ext in ('.wav', '.flac', '.mp3'):
-                LOG.debug(f"[音频文件]: {uploaded_file}")
-                # 使用 OpenAI Whisper 模型进行语音识别
-                audio_text = asr(uploaded_file)
-                texts.append(audio_text)
-            else:
-                LOG.debug(f"[格式不支持]: {uploaded_file}")
+        for uploaded_file in message:
+            if isinstance(uploaded_file, str) and os.path.exists(uploaded_file):
+                file_ext = os.path.splitext(uploaded_file)[1].lower()
+                if file_ext in ('.wav', '.flac', '.mp3'):
+                    LOG.debug(f"[音频文件]: {uploaded_file}")
+                    # 使用 OpenAI Whisper 模型进行语音识别
+                    audio_text = asr(uploaded_file)
+                    texts.append(audio_text)
+                else:
+                    LOG.debug(f"[格式不支持]: {uploaded_file}")
 
         # 如果有识别结果，返回文本
         if texts:
@@ -39,19 +43,29 @@ with gr.Blocks(
     # 添加标题
     gr.Markdown("## 音频转文字工具")
 
-    # 创建聊天机器人界面
-    chatbot = gr.Chatbot(
-        placeholder="上传音频文件进行转录",
-        height=600,
-        type="messages",
-    )
-
-    # 定义接口
-    gr.ChatInterface(
-        fn=process_audio,
-        chatbot=chatbot,
-        type="messages",
-        multimodal=True
+    with gr.Row():
+        # 创建文件上传组件
+        audio_input = gr.Audio(
+            source="upload",
+            type="filepath",
+            label="上传音频文件"
+        )
+        
+        # 创建文本输出组件
+        text_output = gr.Textbox(
+            label="识别结果",
+            placeholder="这里将显示识别结果...",
+            lines=5
+        )
+    
+    # 创建提交按钮
+    submit_btn = gr.Button("开始识别")
+    
+    # 绑定事件处理
+    submit_btn.click(
+        fn=lambda x: process_audio([x] if x else [], []),
+        inputs=[audio_input],
+        outputs=[text_output]
     )
 
 # 主程序入口

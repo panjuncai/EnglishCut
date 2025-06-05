@@ -9,17 +9,23 @@ from logger import LOG
 
 # 模型名称和参数配置
 MODEL_NAME = "openai/whisper-large-v3"  # Whisper 模型名称
-BATCH_SIZE = 8  # 处理批次大小
+BATCH_SIZE = 4  # 减小批次大小以降低内存使用
+CHUNK_LENGTH = 30  # 每个音频片段的长度（秒）
 
 # 检查是否可以使用 GPU，否则使用 CPU
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+# 设置torch内存管理
+if device == "cuda:0":
+    torch.cuda.empty_cache()
+    torch.backends.cudnn.benchmark = True
 
 # 初始化语音识别管道
 pipe = pipeline(
     task="automatic-speech-recognition",  # 自动语音识别任务
     model=MODEL_NAME,  # 指定模型
-    chunk_length_s=60,  # 每个音频片段的长度（秒）
+    chunk_length_s=CHUNK_LENGTH,  # 每个音频片段的长度（秒）
     device=device,  # 指定设备
+    model_kwargs={"low_cpu_mem_usage": True}  # 降低CPU内存使用
 )
 
 def convert_to_wav(input_path):
