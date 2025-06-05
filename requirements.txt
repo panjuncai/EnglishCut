@@ -3,4 +3,8 @@ gradio==3.24.1
 transformers==4.36.0
 soundfile==0.12.1
 ffmpeg-python==0.2.0
-torch==2.1.2+cpu
+# mac os
+# --index-url https://download.pytorch.org/whl/cpu
+# --extra-index-url https://pypi.org/simple
+# torch==2.6.0
+
