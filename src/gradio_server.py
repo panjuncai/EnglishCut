@@ -61,8 +61,14 @@ def create_main_interface():
                 
                 translation_checkbox = gr.Checkbox(
                     label="🌐 启用中文翻译",
-                    value=False,
+                    value=True,
                     info="生成英中双语字幕"
+                )
+                
+                short_subtitle_checkbox = gr.Checkbox(
+                    label="📱 短视频字幕模式",
+                    value=True,
+                    info="针对抖音等平台优化，生成适合手机屏幕的短句字幕"
                 )
                 
                 process_button = gr.Button(
@@ -145,7 +151,7 @@ def create_main_interface():
             
             return info_text, gr.update(choices=format_choices, value=format_choices[0])
 
-        def process_media(file_path, subtitle_format, enable_translation):
+        def process_media(file_path, subtitle_format, enable_translation, enable_short_subtitles):
             """处理多媒体文件"""
             if not file_path:
                 return (
@@ -173,7 +179,8 @@ def create_main_interface():
                 result = process_media_file(
                     file_path=actual_file_path,
                     output_format=subtitle_format,
-                    enable_translation=enable_translation
+                    enable_translation=enable_translation,
+                    enable_short_subtitles=enable_short_subtitles
                 )
                 
                 if result['success']:
@@ -231,7 +238,7 @@ def create_main_interface():
         
         process_button.click(
             process_media,
-            inputs=[file_input, format_dropdown, translation_checkbox],
+            inputs=[file_input, format_dropdown, translation_checkbox, short_subtitle_checkbox],
             outputs=[result_text, translation_text, subtitle_preview, download_file, processing_info]
         )
     

@@ -19,7 +19,7 @@ class MediaProcessor:
         self.temp_files = []  # 记录临时文件，用于清理
         LOG.info("🎵 多媒体处理器初始化完成")
     
-    def process_file(self, file_path, output_format="SRT", enable_translation=False):
+    def process_file(self, file_path, output_format="SRT", enable_translation=False, enable_short_subtitles=False):
         """
         处理多媒体文件
         
@@ -27,6 +27,7 @@ class MediaProcessor:
         - file_path: 输入文件路径
         - output_format: 输出格式 ("LRC" 或 "SRT")
         - enable_translation: 是否启用翻译
+        - enable_short_subtitles: 是否启用短字幕模式
         
         返回:
         - dict: 处理结果
@@ -59,7 +60,8 @@ class MediaProcessor:
                 recognition_result, 
                 file_info, 
                 output_format,
-                enable_translation
+                enable_translation,
+                enable_short_subtitles
             )
             
             # 清理临时文件
@@ -111,7 +113,7 @@ class MediaProcessor:
         temp_filename = f"temp_audio_{os.getpid()}.wav"
         return os.path.join(temp_dir, temp_filename)
     
-    def _generate_subtitles(self, recognition_result, file_info, output_format, is_bilingual):
+    def _generate_subtitles(self, recognition_result, file_info, output_format, is_bilingual, enable_short_subtitles):
         """
         生成字幕文件
         
@@ -120,11 +122,40 @@ class MediaProcessor:
         - file_info: 文件信息
         - output_format: 输出格式
         - is_bilingual: 是否双语
+        - enable_short_subtitles: 是否启用短字幕模式
         
         返回:
         - dict: 字幕生成结果
         """
         try:
+            # 如果启用短字幕模式，先对识别结果进行切分
+            if enable_short_subtitles:
+                from subtitle_splitter import split_subtitle_chunks
+                
+                # 获取原始chunks
+                original_chunks = recognition_result.get("english_chunks", recognition_result.get("chunks", []))
+                
+                if is_bilingual:
+                    # 双语模式：使用对齐后的chunks
+                    from openai_whisper import align_bilingual_chunks
+                    english_chunks = recognition_result.get("english_chunks", [])
+                    chinese_chunks = recognition_result.get("chinese_chunks", [])
+                    aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
+                    
+                    # 切分双语字幕
+                    split_chunks = split_subtitle_chunks(aligned_chunks, is_bilingual=True)
+                    
+                    # 更新识别结果
+                    recognition_result["english_chunks"] = [{"text": chunk["english"], "timestamp": chunk["timestamp"]} for chunk in split_chunks]
+                    recognition_result["chinese_chunks"] = [{"text": chunk["chinese"], "timestamp": chunk["timestamp"]} for chunk in split_chunks]
+                    recognition_result["chunks"] = recognition_result["english_chunks"]  # 保持兼容性
+                else:
+                    # 单语模式
+                    split_chunks = split_subtitle_chunks(original_chunks, is_bilingual=False)
+                    recognition_result["chunks"] = split_chunks
+                
+                LOG.info(f"🔧 字幕切分完成: 原始 {len(original_chunks)} 段 -> 切分后 {len(split_chunks)} 段")
+            
             # 生成输出文件路径
             base_name = os.path.splitext(file_info['name'])[0]
             
@@ -222,7 +253,7 @@ class MediaProcessor:
 # 全局处理器实例
 media_processor = MediaProcessor()
 
-def process_media_file(file_path, output_format="SRT", enable_translation=False):
+def process_media_file(file_path, output_format="SRT", enable_translation=False, enable_short_subtitles=False):
     """
     处理多媒体文件的便捷函数
     
@@ -230,11 +261,12 @@ def process_media_file(file_path, output_format="SRT", enable_translation=False)
     - file_path: 文件路径
     - output_format: 输出格式
     - enable_translation: 是否启用翻译
+    - enable_short_subtitles: 是否启用短字幕模式
     
     返回:
     - dict: 处理结果
     """
-    return media_processor.process_file(file_path, output_format, enable_translation)
+    return media_processor.process_file(file_path, output_format, enable_translation, enable_short_subtitles)
 
 def get_media_formats_info():
     """获取媒体格式信息"""
