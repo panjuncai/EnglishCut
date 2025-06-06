@@ -8,134 +8,9 @@ import json
 from datetime import timedelta
 from openai import OpenAI # <-- 这里是原生的 openai 客户端
 from dotenv import load_dotenv
-import httpx # 导入 httpx 库
+from openai_translate import translate_text
 
 from logger import LOG
-
-# 确保在这个模块中也加载环境变量
-if os.path.exists('.env'):
-    load_dotenv('.env')
-    LOG.info("🔄 在 openai_whisper 模块中重新加载了 .env 文件")
-
-# OpenAI 客户端初始化
-openai_client = None
-
-def init_openai_client():
-    """初始化OpenAI客户端"""
-    global openai_client
-    try:
-        # **重要：移除此处对代理环境变量的清理，因为我们将通过 httpx.Client 显式设置**
-        # proxy_vars = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']
-        # cleared_proxies = []
-        # for var in proxy_vars:
-        #     if var in os.environ:
-        #         cleared_proxies.append(f"{var}={os.environ[var]}")
-        #         del os.environ[var]
-        
-        # if cleared_proxies:
-        #     LOG.info(f"🧹 已清除代理环境变量: {', '.join(cleared_proxies)}")
-        
-        LOG.info("🔍 正在检查环境变量...")
-        all_env_keys = [key for key in os.environ.keys() if 'OPENAI' in key.upper()]
-        LOG.info(f"🔍 找到的 OpenAI 相关环境变量: {all_env_keys}")
-        
-        api_key = os.getenv('OPENAI_API_KEY')
-        LOG.info(f"🔍 获取到的 API 密钥长度: {len(api_key) if api_key else 0}")
-        
-        if not api_key:
-            LOG.warning("⚠️ 未设置OPENAI_API_KEY环境变量")
-            LOG.info(f"🔍 当前所有环境变量: {list(os.environ.keys())[:10]}...")
-            return False
-        
-        if api_key.startswith('sk-your-') or 'example' in api_key.lower():
-            LOG.warning("⚠️ 请设置真实的 OpenAI API 密钥")
-            return False
-        
-        masked_key = api_key[:8] + '*' * (len(api_key) - 12) + api_key[-4:] if len(api_key) > 12 else '*' * len(api_key)
-        LOG.info(f"🔑 使用的 API 密钥: {masked_key}")
-        
-        # **关键修改：创建 httpx.Client 并配置代理**
-        proxies = {
-            "http://": "http://127.0.0.1:1082",
-            "https://": "http://127.0.0.1:1082"
-        }
-        
-        # 将超时设置也放入 httpx.Client
-        http_client_instance = httpx.Client(proxies=proxies, timeout=30.0) 
-        LOG.info(f"🌐 使用 httpx.Client 配置代理: {proxies}")
-
-        # 初始化 OpenAI 客户端，通过 http_client 参数传入
-        base_url = os.getenv('OPENAI_BASE_URL')
-        if base_url:
-            openai_client = OpenAI(
-                api_key=api_key,
-                base_url=base_url,
-                http_client=http_client_instance # <-- 传入配置好的 httpx 客户端
-            )
-            LOG.info(f"🔗 使用自定义 API 端点: {base_url}")
-        else:
-            openai_client = OpenAI(
-                api_key=api_key,
-                http_client=http_client_instance # <-- 传入配置好的 httpx 客户端
-            )
-            LOG.info("🔗 使用官方 OpenAI API 端点")
-        
-        # 测试连接
-        try:
-            # 进行一个简单的测试调用
-            test_response = openai_client.models.list()
-            LOG.info("✅ OpenAI客户端初始化成功，连接正常")
-            return True
-        except Exception as test_error:
-            LOG.warning(f"⚠️ OpenAI连接测试失败: {test_error}")
-            # 即使测试失败，也允许继续，可能是网络问题
-            LOG.info("✅ OpenAI客户端初始化完成（未测试连接）")
-            return True
-        
-    except Exception as e:
-        LOG.error(f"❌ OpenAI客户端初始化失败: {e}")
-        return False
-
-def translate_text_with_openai(text):
-    """使用OpenAI GPT-4o翻译英文为中文"""
-    if not text.strip():
-        return ""
-    
-    try:
-        # 每次翻译前都检查一下环境变量状态
-        current_api_key = os.getenv('OPENAI_API_KEY')
-        LOG.debug(f"🔍 翻译时检查 API 密钥: {'存在' if current_api_key else '不存在'}")
-        
-        if not openai_client:
-            LOG.info("🔄 OpenAI 客户端未初始化，正在初始化...")
-            if not init_openai_client():
-                LOG.error(f"❌ 客户端初始化失败，当前 API 密钥状态: {'存在' if current_api_key else '不存在'}")
-                return f"[需要设置OPENAI_API_KEY: {text[:30]}...]"
-        
-        # 使用GPT-4o进行翻译
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "你是一个专业的英中翻译助手。请将用户提供的英文翻译成自然流畅的中文，保持原意不变。只输出翻译结果，不要添加任何解释或其他内容。"
-                },
-                {
-                    "role": "user", 
-                    "content": f"请将以下英文翻译成中文：{text}"
-                }
-            ],
-            temperature=0.3,
-            max_tokens=1000
-        )
-        
-        translated = response.choices[0].message.content.strip()
-        LOG.debug(f"🌏 翻译: {text[:50]}... -> {translated[:50]}...")
-        return translated
-        
-    except Exception as e:
-        LOG.error(f"❌ OpenAI翻译失败: {e}")
-        return f"[翻译失败: {text[:30]}...]"
 
 # 智能设备检测和模型配置
 def get_optimal_config():
@@ -290,16 +165,16 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         chinese_text = ""
         
         if return_bilingual:
-            LOG.info("🌏 开始使用GPT-4o生成中文翻译...")
+            LOG.info("🌏 开始使用GPT-4o-mini生成中文翻译...")
             
             # 翻译整体文本
-            chinese_text = translate_text_with_openai(english_text)
+            chinese_text = translate_text(english_text)
             
             # 翻译每个时间戳片段
             for chunk in chunks:
                 english_chunk_text = chunk.get("text", "").strip()
                 if english_chunk_text:
-                    chinese_chunk_text = translate_text_with_openai(english_chunk_text)
+                    chinese_chunk_text = translate_text(english_chunk_text)
                     chinese_chunks.append({
                         "text": chinese_chunk_text,
                         "timestamp": chunk.get("timestamp", [None, None])
@@ -526,6 +401,6 @@ if __name__ == "__main__":
     # 启动Gradio应用，允许队列功能，并通过 HTTPS 访问
     demo.queue().launch(
         share=False,
-        server_name="0.0.0.0",
+        server_name="127.0.0.1",
         # auth=("django", "1234") # ⚠️注意：记住修改密码
     )

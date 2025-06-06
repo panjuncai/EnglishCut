@@ -169,3 +169,5 @@ tests/*
 jupyter/*.pptx
 .gradio/*
 nohup.out
+
+*.csv

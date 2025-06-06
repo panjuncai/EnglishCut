@@ -2,41 +2,6 @@ import os
 # 设置环境变量以解决 OpenMP 冲突
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
-# 使用 python-dotenv 加载环境变量
-from dotenv import load_dotenv
-
-def load_env_variables():
-    """使用 python-dotenv 加载环境变量"""
-    # 尝试加载 .env 文件
-    if os.path.exists('.env'):
-        load_dotenv('.env')
-        print("✅ 已加载 .env 文件")
-        
-        # 检查并显示 API 密钥状态
-        api_key = os.getenv('OPENAI_API_KEY')
-        if api_key:
-            if api_key.startswith('sk-your-') or 'example' in api_key.lower():
-                print("⚠️ 请在 .env 文件中设置真实的 OpenAI API 密钥")
-            else:
-                # 显示遮蔽的 API 密钥
-                masked_key = api_key[:8] + '*' * (len(api_key) - 12) + api_key[-4:] if len(api_key) > 12 else '*' * len(api_key)
-                print(f"✅ 已加载 API 密钥: {masked_key}")
-        else:
-            print("⚠️ 未找到 OPENAI_API_KEY")
-    
-    # 如果没有 .env 文件，尝试加载示例文件
-    elif os.path.exists('env.example'):
-        load_dotenv('env.example')
-        print("💡 已加载 env.example 文件 (示例配置)")
-        print("💡 请复制 env.example 为 .env 并填入真实的 API 密钥")
-    
-    else:
-        print("💡 未找到环境变量文件")
-        print("💡 请创建 .env 文件并添加 OPENAI_API_KEY")
-
-# 加载环境变量
-load_env_variables()
-
 import gradio as gr
 from openai_whisper import asr, save_lrc_file
 from logger import LOG
