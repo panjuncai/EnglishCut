@@ -9,7 +9,7 @@ sys.path.append('src')
 
 from openai_whisper import generate_srt_content, save_srt_file
 from openai_translate import translate_text
-from logger import LOG
+from src.logger import LOG
 
 def test_srt_functionality():
     """测试 SRT 字幕功能"""

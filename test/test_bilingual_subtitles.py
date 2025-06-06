@@ -8,7 +8,7 @@ import os
 sys.path.append('src')
 
 from openai_whisper import asr, generate_lrc_content, generate_srt_content
-from logger import LOG
+from src.logger import LOG
 
 def test_bilingual_functionality():
     """测试双语字幕功能"""

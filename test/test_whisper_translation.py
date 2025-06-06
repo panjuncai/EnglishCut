@@ -8,7 +8,7 @@ import os
 sys.path.append('src')
 
 from openai_translate import translate_text
-from logger import LOG
+from src.logger import LOG
 
 def test_translation():
     """测试翻译功能"""

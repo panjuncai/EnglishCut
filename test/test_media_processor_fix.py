@@ -7,7 +7,7 @@
 import os
 import sys
 import tempfile
-from logger import LOG
+from src.logger import LOG
 
 def test_import_fix():
     """测试导入是否修复"""

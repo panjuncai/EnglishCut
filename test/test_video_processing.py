@@ -7,7 +7,7 @@
 import os
 import sys
 import tempfile
-from logger import LOG
+from src.logger import LOG
 from media_processor import process_media_file, get_media_formats_info
 from file_detector import validate_file, get_file_info, FileType
 from video_processor import check_ffmpeg_availability, extract_audio_from_video, get_video_info

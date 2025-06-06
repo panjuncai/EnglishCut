@@ -5,7 +5,7 @@
 """
 
 import sys
-from logger import LOG
+from src.logger import LOG
 
 def test_gradio_import():
     """测试 Gradio 导入"""

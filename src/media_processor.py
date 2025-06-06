@@ -6,12 +6,10 @@
 
 import os
 import tempfile
-from pathlib import Path
 from logger import LOG
-from file_detector import FileType, get_file_type, validate_file, get_file_info
-from video_processor import extract_audio_from_video, cleanup_temp_audio, check_ffmpeg_availability
-from openai_whisper import asr, format_time_lrc, generate_lrc_content, save_lrc_file, format_time_srt, generate_srt_content, save_srt_file
-from openai_translate import translate_text
+from file_detector import FileType, validate_file, get_file_info
+from video_processor import extract_audio_from_video, check_ffmpeg_availability
+from openai_whisper import asr, generate_lrc_content, save_lrc_file, generate_srt_content, save_srt_file
 
 class MediaProcessor:
     """多媒体处理器类"""
