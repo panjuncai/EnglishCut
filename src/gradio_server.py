@@ -80,14 +80,9 @@ with gr.Blocks(
     # 添加标题和说明
     gr.Markdown("""
     # 🎵 音频转文字 & 字幕生成器
-    
-    支持将音频文件转换为文字，并自动生成带时间戳的字幕文件。
-    
     **支持格式**: WAV、FLAC、MP3  
     **字幕格式**: LRC、SRT（支持双语）  
     **特色功能**: Mac M4 GPU 加速、GPT-4o-mini 高质量翻译
-    
-    **双语翻译**: 使用 OpenAI GPT-4o-mini 提供高质量英中翻译
     """)
 
     with gr.Row():
@@ -110,9 +105,9 @@ with gr.Blocks(
             # 字幕格式选择
             subtitle_format_select = gr.Dropdown(
                 label="📝 选择字幕格式",
-                choices=["LRC", "SRT"],
-                value="LRC",
-                info="LRC: 音乐播放器格式 [时间]文本 | SRT: 视频播放器格式"
+                choices=["SRT","LRC"],
+                value="SRT",
+                info="SRT: 视频播放器格式 | LRC: 音乐播放器格式"
             )
             
             # 处理按钮
@@ -122,11 +117,6 @@ with gr.Blocks(
                 size="lg"
             )
             
-            # # 处理信息显示
-            # info_output = gr.Markdown(
-            #     "💡 请上传音频文件开始处理",
-            #     elem_classes=["info-box"]
-            # )
         
         with gr.Column(scale=2):
             # 识别结果文本
@@ -142,37 +132,6 @@ with gr.Blocks(
                 label="📄 下载字幕文件",
                 visible=False
             )
-    
-    # 示例文件（如果有的话）
-    gr.Markdown("""
-    ### 📌 使用说明
-    1. **设置API密钥**（首次使用）: 复制 `env.example` 为 `.env` 并填入您的 OpenAI API 密钥
-    2. 点击"上传音频文件"选择您的音频文件
-    3. 选择是否开启"🌏 生成英中双语字幕"（推荐开启）
-    4. 选择字幕格式：**LRC**（音乐播放器）或 **SRT**（视频播放器）
-    5. 点击"开始识别"进行处理（Mac M4 用户将享受GPU加速）
-    6. 等待处理完成，查看识别结果
-    7. 下载生成的字幕文件用于播放器
-    
-    ### 📝 字幕格式说明
-    - **LRC格式**: 适用于音乐播放器，格式为 `[mm:ss.xx]歌词内容`
-    - **SRT格式**: 适用于视频播放器，包含序号、时间戳和字幕内容
-    - **双语模式**: LRC 显示为 `英文 // 中文`，SRT 显示为两行（英文换行中文）
-    
-    ### 🔑 双语功能设置
-    - 需要OpenAI API密钥才能使用GPT-4o-mini翻译
-    - 复制 `env.example` 为 `.env` 
-    - 将 `OPENAI_API_KEY=sk-your-openai-api-key-here` 替换为您的真实密钥
-    - 重启应用后生效
-    """)
-    
-    # 绑定事件处理
-    # def update_interface(audio_file):
-    #     """更新界面状态"""
-    #     if audio_file:
-    #         return gr.update(visible=True), "🔄 点击开始识别按钮处理音频..."
-    #     else:
-    #         return gr.update(visible=False), "💡 请上传音频文件开始处理"
     
     def process_and_update(audio_file, bilingual_mode, subtitle_format):
         """处理音频并更新界面"""
@@ -193,7 +152,6 @@ with gr.Blocks(
     
     # 事件绑定
     audio_input.change(
-        # fn=update_interface,
         inputs=[audio_input],
         outputs=[lrc_download]
     )
