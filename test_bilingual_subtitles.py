@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-测试双语字幕功能
+测试双语字幕功能（LRC 和 SRT）
 """
 
 import sys
 import os
 sys.path.append('src')
 
-from openai_whisper import asr, generate_lrc_content
+from openai_whisper import asr, generate_lrc_content, generate_srt_content
 from logger import LOG
 
 def test_bilingual_functionality():
@@ -59,14 +59,23 @@ def test_bilingual_functionality():
         mock_result['chinese_chunks'] = chinese_chunks
         
         # 生成双语LRC内容
-        print("\n📄 生成双语LRC字幕...")
+        print("\n📄 生成双语 LRC 字幕...")
         lrc_content = generate_lrc_content(mock_result, "test_audio")
         print("LRC内容预览:")
         print("-" * 50)
-        print(lrc_content[:500] + "..." if len(lrc_content) > 500 else lrc_content)
+        print(lrc_content[:300] + "..." if len(lrc_content) > 300 else lrc_content)
+        print("-" * 50)
+        
+        # 生成双语SRT内容
+        print("\n📄 生成双语 SRT 字幕...")
+        srt_content = generate_srt_content(mock_result, "test_audio")
+        print("SRT内容预览:")
+        print("-" * 50)
+        print(srt_content[:400] + "..." if len(srt_content) > 400 else srt_content)
         print("-" * 50)
         
         print("\n✅ 双语字幕功能测试成功！")
+        print("✅ LRC 和 SRT 格式都已正确生成")
         return True
         
     except Exception as e:

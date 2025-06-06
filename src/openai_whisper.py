@@ -338,6 +338,124 @@ def save_lrc_file(result_data, audio_filepath):
         LOG.error(f"❌ 生成LRC文件失败: {e}")
         return None
 
+def format_time_srt(seconds):
+    """将秒数转换为SRT格式时间戳 [hh:mm:ss,mmm]"""
+    if seconds is None:
+        return "00:00:00,000"
+    
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    milliseconds = int((secs % 1) * 1000)
+    secs = int(secs)
+    
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+def generate_srt_content(result_data, audio_filename="audio"):
+    """生成SRT格式字幕内容，支持双语"""
+    if not isinstance(result_data, dict):
+        return ""
+    
+    is_bilingual = result_data.get("is_bilingual", False)
+    
+    srt_lines = []
+    subtitle_index = 1
+    
+    if is_bilingual:
+        # 双语模式
+        english_chunks = result_data.get("english_chunks", [])
+        chinese_chunks = result_data.get("chinese_chunks", [])
+        
+        if english_chunks:
+            # 对齐英中字幕
+            aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
+            
+            for chunk in aligned_chunks:
+                timestamp = chunk.get("timestamp", [None, None])
+                english_text = chunk.get("english", "")
+                chinese_text = chunk.get("chinese", "")
+                
+                if english_text and timestamp[0] is not None and timestamp[1] is not None:
+                    start_time = format_time_srt(timestamp[0])
+                    end_time = format_time_srt(timestamp[1])
+                    
+                    # SRT 格式：序号、时间戳、字幕内容、空行
+                    srt_lines.append(str(subtitle_index))
+                    srt_lines.append(f"{start_time} --> {end_time}")
+                    
+                    if chinese_text:
+                        # 双语格式：英文换行中文
+                        srt_lines.append(english_text)
+                        srt_lines.append(chinese_text)
+                    else:
+                        # 只有英文
+                        srt_lines.append(english_text)
+                    
+                    srt_lines.append("")  # 空行分隔
+                    subtitle_index += 1
+        else:
+            # 没有时间戳，使用整段文本
+            english_text = result_data.get("english_text", "")
+            chinese_text = result_data.get("chinese_text", "")
+            if english_text:
+                srt_lines.append("1")
+                srt_lines.append("00:00:00,000 --> 00:00:10,000")
+                srt_lines.append(english_text)
+                if chinese_text:
+                    srt_lines.append(chinese_text)
+                srt_lines.append("")
+    else:
+        # 单语模式（保持原有逻辑）
+        text = result_data.get("text", "")
+        chunks = result_data.get("chunks", [])
+        
+        if chunks:
+            for chunk in chunks:
+                timestamp = chunk.get("timestamp", [None, None])
+                chunk_text = chunk.get("text", "").strip()
+                
+                if chunk_text and timestamp[0] is not None and timestamp[1] is not None:
+                    start_time = format_time_srt(timestamp[0])
+                    end_time = format_time_srt(timestamp[1])
+                    
+                    srt_lines.append(str(subtitle_index))
+                    srt_lines.append(f"{start_time} --> {end_time}")
+                    srt_lines.append(chunk_text)
+                    srt_lines.append("")  # 空行分隔
+                    subtitle_index += 1
+        else:
+            # 如果没有时间戳，添加整个文本
+            srt_lines.append("1")
+            srt_lines.append("00:00:00,000 --> 00:00:10,000")
+            srt_lines.append(text)
+            srt_lines.append("")
+    
+    return "\n".join(srt_lines)
+
+def save_srt_file(result_data, audio_filepath):
+    """保存SRT字幕文件并返回文件路径"""
+    try:
+        # 获取音频文件名（不含扩展名）
+        audio_name = os.path.splitext(os.path.basename(audio_filepath))[0]
+        
+        # 生成SRT内容
+        srt_content = generate_srt_content(result_data, audio_name)
+        
+        # 创建SRT文件路径
+        srt_filename = f"{audio_name}_subtitle.srt"
+        srt_filepath = os.path.join(tempfile.gettempdir(), srt_filename)
+        
+        # 写入SRT文件
+        with open(srt_filepath, 'w', encoding='utf-8') as f:
+            f.write(srt_content)
+        
+        LOG.info(f"📁 SRT字幕文件已生成: {srt_filepath}")
+        return srt_filepath
+        
+    except Exception as e:
+        LOG.error(f"❌ 生成SRT文件失败: {e}")
+        return None
+
 def transcribe(inputs, task):
     """
     将音频文件转录或翻译为文本。

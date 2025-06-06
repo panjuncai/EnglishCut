@@ -3,11 +3,11 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 import gradio as gr
-from openai_whisper import asr, save_lrc_file
+from openai_whisper import asr, save_lrc_file, save_srt_file
 from logger import LOG
 
-def process_audio_with_lrc(audio_file, bilingual_mode):
-    """处理音频文件并生成文本和LRC字幕"""
+def process_audio_with_subtitles(audio_file, bilingual_mode, subtitle_format):
+    """处理音频文件并生成文本和字幕文件"""
     try:
         if not audio_file or not os.path.exists(audio_file):
             return "请上传音频文件", None, ""
@@ -19,6 +19,7 @@ def process_audio_with_lrc(audio_file, bilingual_mode):
         
         LOG.info(f"🎵 开始处理音频文件: {audio_file}")
         LOG.info(f"🌏 双语模式: {'开启' if bilingual_mode else '关闭'}")
+        LOG.info(f"📝 字幕格式: {subtitle_format.upper()}")
         
         # 使用 OpenAI Whisper 模型进行语音识别
         result_data = asr(audio_file, return_bilingual=bilingual_mode)
@@ -33,8 +34,12 @@ def process_audio_with_lrc(audio_file, bilingual_mode):
             else:
                 display_text = english_text
             
-            # 生成LRC字幕文件
-            lrc_file_path = save_lrc_file(result_data, audio_file)
+            # 根据选择的格式生成字幕文件
+            subtitle_file_path = None
+            if subtitle_format.lower() == "lrc":
+                subtitle_file_path = save_lrc_file(result_data, audio_file)
+            elif subtitle_format.lower() == "srt":
+                subtitle_file_path = save_srt_file(result_data, audio_file)
             
             # 生成处理信息
             processing_time = result_data.get("processing_time", 0)
@@ -45,10 +50,11 @@ def process_audio_with_lrc(audio_file, bilingual_mode):
 ⏱️ 处理时间: {processing_time:.1f} 秒
 📝 英文长度: {len(english_text)} 字符
 🌏 双语模式: {'✅ 已生成中文翻译' if bilingual_mode else '❌ 仅英文'}
+📄 字幕格式: {subtitle_format.upper()}
 🕐 时间戳段数: {chunks_count}
 """
             
-            return display_text, lrc_file_path, info_text
+            return display_text, subtitle_file_path, info_text
         else:
             # 兼容旧版本返回格式
             return str(result_data), None, "⚠️ 未生成时间戳信息"
@@ -59,7 +65,7 @@ def process_audio_with_lrc(audio_file, bilingual_mode):
 
 # 创建 Gradio 界面
 with gr.Blocks(
-    title="音频转文字 & LRC字幕生成器",
+    title="音频转文字 & 字幕生成器",
     css="""
     body { animation: fadeIn 2s; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -73,11 +79,15 @@ with gr.Blocks(
 ) as demo:
     # 添加标题和说明
     gr.Markdown("""
-    # 🎵 音频转文字 & LRC字幕生成器
-    支持将音频文件转换为文字，并自动生成带时间戳的 LRC 字幕文件。
+    # 🎵 音频转文字 & 字幕生成器
+    
+    支持将音频文件转换为文字，并自动生成带时间戳的字幕文件。
+    
     **支持格式**: WAV、FLAC、MP3  
-    **特色功能**: Mac M4 GPU 加速、GPT-4o高质量翻译、LRC字幕下载
-    **双语翻译**: 使用 OpenAI GPT-4o 提供高质量英中翻译
+    **字幕格式**: LRC、SRT（支持双语）  
+    **特色功能**: Mac M4 GPU 加速、GPT-4o-mini 高质量翻译
+    
+    **双语翻译**: 使用 OpenAI GPT-4o-mini 提供高质量英中翻译
     """)
 
     with gr.Row():
@@ -94,7 +104,15 @@ with gr.Blocks(
             bilingual_checkbox = gr.Checkbox(
                 label="🌏 生成英中双语字幕",
                 value=True,
-                info="开启后将生成英文 // 中文格式的LRC字幕"
+                info="开启后将生成英文+中文格式的字幕"
+            )
+            
+            # 字幕格式选择
+            subtitle_format_select = gr.Dropdown(
+                label="📝 选择字幕格式",
+                choices=["LRC", "SRT"],
+                value="LRC",
+                info="LRC: 音乐播放器格式 [时间]文本 | SRT: 视频播放器格式"
             )
             
             # 处理按钮
@@ -121,10 +139,32 @@ with gr.Blocks(
             
             # LRC文件下载
             lrc_download = gr.File(
-                label="📄 下载 LRC 字幕文件",
+                label="📄 下载字幕文件",
                 visible=False
             )
     
+    # 示例文件（如果有的话）
+    gr.Markdown("""
+    ### 📌 使用说明
+    1. **设置API密钥**（首次使用）: 复制 `env.example` 为 `.env` 并填入您的 OpenAI API 密钥
+    2. 点击"上传音频文件"选择您的音频文件
+    3. 选择是否开启"🌏 生成英中双语字幕"（推荐开启）
+    4. 选择字幕格式：**LRC**（音乐播放器）或 **SRT**（视频播放器）
+    5. 点击"开始识别"进行处理（Mac M4 用户将享受GPU加速）
+    6. 等待处理完成，查看识别结果
+    7. 下载生成的字幕文件用于播放器
+    
+    ### 📝 字幕格式说明
+    - **LRC格式**: 适用于音乐播放器，格式为 `[mm:ss.xx]歌词内容`
+    - **SRT格式**: 适用于视频播放器，包含序号、时间戳和字幕内容
+    - **双语模式**: LRC 显示为 `英文 // 中文`，SRT 显示为两行（英文换行中文）
+    
+    ### 🔑 双语功能设置
+    - 需要OpenAI API密钥才能使用GPT-4o-mini翻译
+    - 复制 `env.example` 为 `.env` 
+    - 将 `OPENAI_API_KEY=sk-your-openai-api-key-here` 替换为您的真实密钥
+    - 重启应用后生效
+    """)
     
     # 绑定事件处理
     # def update_interface(audio_file):
@@ -134,14 +174,14 @@ with gr.Blocks(
     #     else:
     #         return gr.update(visible=False), "💡 请上传音频文件开始处理"
     
-    def process_and_update(audio_file, bilingual_mode):
+    def process_and_update(audio_file, bilingual_mode, subtitle_format):
         """处理音频并更新界面"""
-        text, lrc_file, info = process_audio_with_lrc(audio_file, bilingual_mode)
+        text, subtitle_file, info = process_audio_with_subtitles(audio_file, bilingual_mode, subtitle_format)
         
-        if lrc_file and os.path.exists(lrc_file):
+        if subtitle_file and os.path.exists(subtitle_file):
             return (
                 text,
-                gr.update(value=lrc_file, visible=True),
+                gr.update(value=subtitle_file, visible=True),
                 info
             )
         else:
@@ -160,7 +200,7 @@ with gr.Blocks(
     
     process_btn.click(
         fn=process_and_update,
-        inputs=[audio_input, bilingual_checkbox],
+        inputs=[audio_input, bilingual_checkbox, subtitle_format_select],
         outputs=[text_output, lrc_download]
     )
 
