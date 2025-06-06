@@ -75,17 +75,43 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_keywords_subtitle_id ON t_keywords(subtitle_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_keywords_word ON t_keywords(key_word)")
             
+            # 执行数据库迁移
+            self._migrate_database(cursor)
+            
             conn.commit()
     
-    def create_series(self, name: str, file_path: str = None, file_type: str = None, duration: float = None) -> int:
+    def _migrate_database(self, cursor):
+        """执行数据库迁移，添加新字段"""
+        try:
+            # 检查 t_series 表是否已有 new_name 和 new_file_path 字段
+            cursor.execute("PRAGMA table_info(t_series)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # 添加 new_name 字段（如果不存在）
+            if 'new_name' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN new_name TEXT")
+                LOG.info("📊 已添加 new_name 字段到 t_series 表")
+            
+            # 添加 new_file_path 字段（如果不存在）
+            if 'new_file_path' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN new_file_path TEXT")
+                LOG.info("📊 已添加 new_file_path 字段到 t_series 表")
+                
+        except Exception as e:
+            LOG.error(f"❌ 数据库迁移失败: {e}")
+    
+    def create_series(self, name: str, file_path: str = None, file_type: str = None, duration: float = None, 
+                     new_name: str = None, new_file_path: str = None) -> int:
         """
         创建新的媒体系列
         
         参数:
         - name: 系列名称（通常是文件名）
-        - file_path: 文件路径
+        - file_path: 原始文件路径
         - file_type: 文件类型（audio/video）
         - duration: 时长（秒）
+        - new_name: 烧制后的新视频名称
+        - new_file_path: 烧制后的新视频文件路径
         
         返回:
         - series_id: 新创建的系列ID
@@ -93,15 +119,66 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO t_series (name, file_path, file_type, duration)
-                VALUES (?, ?, ?, ?)
-            """, (name, file_path, file_type, duration))
+                INSERT INTO t_series (name, file_path, file_type, duration, new_name, new_file_path)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (name, file_path, file_type, duration, new_name, new_file_path))
             
             series_id = cursor.lastrowid
             conn.commit()
             
             LOG.info(f"📊 创建媒体系列: {name} (ID: {series_id})")
             return series_id
+    
+    def update_series_video_info(self, series_id: int, new_name: str = None, new_file_path: str = None) -> bool:
+        """
+        更新系列的烧制视频信息
+        
+        参数:
+        - series_id: 系列ID
+        - new_name: 烧制后的新视频名称
+        - new_file_path: 烧制后的新视频文件路径
+        
+        返回:
+        - bool: 是否更新成功
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 构建动态更新语句
+                update_fields = []
+                update_values = []
+                
+                if new_name is not None:
+                    update_fields.append("new_name = ?")
+                    update_values.append(new_name)
+                
+                if new_file_path is not None:
+                    update_fields.append("new_file_path = ?")
+                    update_values.append(new_file_path)
+                
+                if not update_fields:
+                    LOG.warning("⚠️ 没有提供要更新的字段")
+                    return False
+                
+                # 添加更新时间
+                update_fields.append("updated_at = CURRENT_TIMESTAMP")
+                update_values.append(series_id)
+                
+                sql = f"UPDATE t_series SET {', '.join(update_fields)} WHERE id = ?"
+                cursor.execute(sql, update_values)
+                
+                if cursor.rowcount > 0:
+                    conn.commit()
+                    LOG.info(f"📊 更新系列视频信息成功: ID={series_id}")
+                    return True
+                else:
+                    LOG.warning(f"⚠️ 系列不存在: ID={series_id}")
+                    return False
+                    
+        except Exception as e:
+            LOG.error(f"❌ 更新系列视频信息失败: {e}")
+            return False
     
     def create_subtitles(self, series_id: int, subtitles: List[Dict]) -> List[int]:
         """

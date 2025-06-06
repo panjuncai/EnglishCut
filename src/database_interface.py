@@ -36,10 +36,11 @@ def create_database_interface():
                 with gr.Row():
                     with gr.Column(scale=3):
                         series_table = gr.Dataframe(
-                            headers=["ID", "名称", "文件类型", "时长(秒)", "创建时间"],
-                            datatype=["number", "str", "str", "number", "str"],
+                            headers=["ID", "名称", "文件类型", "时长(秒)", "烧制视频名", "烧制路径", "创建时间"],
+                            datatype=["number", "str", "str", "number", "str", "str", "str"],
                             label="媒体系列列表",
-                            interactive=False
+                            interactive=False,
+                            wrap=True
                         )
                     
                     with gr.Column(scale=1):
@@ -47,6 +48,15 @@ def create_database_interface():
                         selected_series_id = gr.Number(label="选择系列ID", value=None, precision=0)
                         view_subtitles_btn = gr.Button("📝 查看字幕", variant="primary")
                         delete_series_btn = gr.Button("🗑️ 删除系列", variant="stop")
+                        
+                        # 烧制视频信息更新
+                        with gr.Group():
+                            gr.Markdown("### 🎬 更新烧制视频信息")
+                            update_series_id = gr.Number(label="系列ID", precision=0)
+                            update_new_name = gr.Textbox(label="烧制视频名称", placeholder="例: output_with_subtitles.mp4")
+                            update_new_path = gr.Textbox(label="烧制视频路径", placeholder="例: /path/to/output_video.mp4")
+                            update_video_btn = gr.Button("💾 更新信息", variant="primary")
+                            update_result = gr.Textbox(label="更新结果", interactive=False)
             
             # 字幕管理
             with gr.TabItem("📝 字幕管理"):
@@ -71,7 +81,9 @@ def create_database_interface():
                     
                     with gr.Column():
                         keyword_series_id = gr.Number(label="按系列ID查看", value=None, precision=0)
-                        load_keywords_btn = gr.Button("📚 加载关键词", variant="secondary")
+                        with gr.Row():
+                            load_keywords_btn = gr.Button("📚 加载关键词", variant="secondary")
+                            extract_keywords_btn = gr.Button("🤖 AI提取关键词", variant="primary")
                 
                 keywords_table = gr.Dataframe(
                     headers=["ID", "单词", "音标", "解释", "来源系列", "时间段"],
@@ -95,6 +107,13 @@ def create_database_interface():
                 
                 add_keyword_btn = gr.Button("➕ 添加关键词", variant="primary")
                 add_result = gr.Textbox(label="添加结果", interactive=False)
+                
+                # AI提取关键词状态
+                with gr.Row():
+                    gr.Markdown("### 🤖 AI关键词提取")
+                
+                extract_status = gr.Textbox(label="提取状态", interactive=False, placeholder="等待开始...")
+                extract_progress = gr.Textbox(label="提取进度", interactive=False)
 
         def update_statistics():
             """更新统计信息"""
@@ -125,11 +144,21 @@ def create_database_interface():
                 # 转换为表格数据
                 table_data = []
                 for series in series_list:
+                    # 处理烧制视频信息的显示
+                    new_name = series.get('new_name', '') or '未烧制'
+                    new_path = series.get('new_file_path', '') or '未设置'
+                    
+                    # 截断过长的路径显示
+                    if len(new_path) > 50:
+                        new_path = new_path[:47] + '...'
+                    
                     table_data.append([
                         series['id'],
                         series['name'],
                         series.get('file_type', '未知'),
                         series.get('duration', 0) or 0,
+                        new_name,
+                        new_path,
                         series['created_at']
                     ])
                 
@@ -223,6 +252,30 @@ def create_database_interface():
                 LOG.error(f"加载关键词失败: {e}")
                 return []
 
+        def update_video_info_func(series_id, new_name, new_path):
+            """更新系列的烧制视频信息"""
+            if not series_id:
+                return "❌ 请输入有效的系列ID"
+            
+            if not new_name.strip() and not new_path.strip():
+                return "❌ 请至少输入视频名称或路径中的一个"
+            
+            try:
+                success = db_manager.update_series_video_info(
+                    int(series_id),
+                    new_name=new_name.strip() if new_name.strip() else None,
+                    new_file_path=new_path.strip() if new_path.strip() else None
+                )
+                
+                if success:
+                    return f"✅ 系列 {series_id} 的烧制视频信息已更新"
+                else:
+                    return f"❌ 更新失败，请检查系列ID是否存在"
+                    
+            except Exception as e:
+                LOG.error(f"更新烧制视频信息失败: {e}")
+                return f"❌ 更新失败: {str(e)}"
+
         def delete_series_func(series_id):
             """删除系列"""
             if not series_id:
@@ -258,6 +311,61 @@ def create_database_interface():
             except Exception as e:
                 LOG.error(f"添加关键词失败: {e}")
                 return f"❌ 添加失败: {str(e)}"
+
+        def extract_keywords_ai(series_id):
+            """使用AI提取关键词"""
+            if not series_id:
+                return "❌ 请输入有效的系列ID", "❌ 请输入系列ID"
+            
+            try:
+                # 导入关键词提取器
+                from keyword_extractor import keyword_extractor
+                
+                # 获取系列字幕
+                subtitles = db_manager.get_subtitles(int(series_id))
+                if not subtitles:
+                    return "❌ 该系列没有字幕数据", "未找到字幕"
+                
+                # 过滤有英文文本的字幕
+                english_subtitles = [sub for sub in subtitles if sub.get('english_text', '').strip()]
+                if not english_subtitles:
+                    return "❌ 该系列没有英文字幕文本", "没有英文文本"
+                
+                yield f"🔄 开始AI分析...", f"准备分析 {len(english_subtitles)} 条字幕"
+                
+                # 使用批量提取模式（更高效）
+                extracted_keywords = keyword_extractor.batch_extract_with_context(
+                    english_subtitles, batch_size=3
+                )
+                
+                if not extracted_keywords:
+                    yield "⚠️ AI未提取到关键词", "分析完成，但未找到重点词汇"
+                    return
+                
+                yield f"💾 保存到数据库...", f"提取到 {len(extracted_keywords)} 个关键词"
+                
+                # 分组保存到数据库
+                saved_count = 0
+                for keyword in extracted_keywords:
+                    subtitle_id = keyword['subtitle_id']
+                    if subtitle_id:
+                        keyword_data = [{
+                            'key_word': keyword['key_word'],
+                            'phonetic_symbol': keyword.get('phonetic_symbol', ''),
+                            'explain_text': keyword.get('explain_text', '')
+                        }]
+                        
+                        try:
+                            db_manager.create_keywords(subtitle_id, keyword_data)
+                            saved_count += 1
+                        except Exception as e:
+                            LOG.error(f"保存关键词失败: {e}")
+                
+                yield f"✅ AI提取完成！", f"成功保存 {saved_count} 个关键词到数据库"
+                
+            except Exception as e:
+                LOG.error(f"AI提取关键词失败: {e}")
+                yield f"❌ 提取失败: {str(e)}", "发生错误"
 
         # 绑定事件
         interface.load(
@@ -304,6 +412,18 @@ def create_database_interface():
             fn=add_keyword_func,
             inputs=[add_subtitle_id, add_keyword, add_phonetic, add_explanation],
             outputs=[add_result]
+        )
+        
+        extract_keywords_btn.click(
+            fn=extract_keywords_ai,
+            inputs=[keyword_series_id],
+            outputs=[extract_status, extract_progress]
+        )
+        
+        update_video_btn.click(
+            fn=update_video_info_func,
+            inputs=[update_series_id, update_new_name, update_new_path],
+            outputs=[update_result]
         )
     
     return interface
