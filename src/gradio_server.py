@@ -74,12 +74,9 @@ with gr.Blocks(
     # 添加标题和说明
     gr.Markdown("""
     # 🎵 音频转文字 & LRC字幕生成器
-    
     支持将音频文件转换为文字，并自动生成带时间戳的 LRC 字幕文件。
-    
     **支持格式**: WAV、FLAC、MP3  
     **特色功能**: Mac M4 GPU 加速、GPT-4o高质量翻译、LRC字幕下载
-    
     **双语翻译**: 使用 OpenAI GPT-4o 提供高质量英中翻译
     """)
 
@@ -107,11 +104,11 @@ with gr.Blocks(
                 size="lg"
             )
             
-            # 处理信息显示
-            info_output = gr.Markdown(
-                "💡 请上传音频文件开始处理",
-                elem_classes=["info-box"]
-            )
+            # # 处理信息显示
+            # info_output = gr.Markdown(
+            #     "💡 请上传音频文件开始处理",
+            #     elem_classes=["info-box"]
+            # )
         
         with gr.Column(scale=2):
             # 识别结果文本
@@ -128,30 +125,14 @@ with gr.Blocks(
                 visible=False
             )
     
-    # 示例文件（如果有的话）
-    gr.Markdown("""
-    ### 📌 使用说明
-    1. **设置API密钥**（首次使用）: 复制 `env.example` 为 `.env` 并填入您的 OpenAI API 密钥
-    2. 点击"上传音频文件"选择您的音频文件
-    3. 选择是否开启"🌏 生成英中双语字幕"（推荐开启）
-    4. 点击"开始识别"进行处理（Mac M4 用户将享受GPU加速）
-    5. 等待处理完成，查看识别结果
-    6. 下载生成的 LRC 字幕文件用于播放器
-    
-    ### 🔑 双语功能设置
-    - 需要OpenAI API密钥才能使用GPT-4o翻译
-    - 复制 `env.example` 为 `.env` 
-    - 将 `OPENAI_API_KEY=sk-your-openai-api-key-here` 替换为您的真实密钥
-    - 重启应用后生效
-    """)
     
     # 绑定事件处理
-    def update_interface(audio_file):
-        """更新界面状态"""
-        if audio_file:
-            return gr.update(visible=True), "🔄 点击开始识别按钮处理音频..."
-        else:
-            return gr.update(visible=False), "💡 请上传音频文件开始处理"
+    # def update_interface(audio_file):
+    #     """更新界面状态"""
+    #     if audio_file:
+    #         return gr.update(visible=True), "🔄 点击开始识别按钮处理音频..."
+    #     else:
+    #         return gr.update(visible=False), "💡 请上传音频文件开始处理"
     
     def process_and_update(audio_file, bilingual_mode):
         """处理音频并更新界面"""
@@ -172,15 +153,15 @@ with gr.Blocks(
     
     # 事件绑定
     audio_input.change(
-        fn=update_interface,
+        # fn=update_interface,
         inputs=[audio_input],
-        outputs=[lrc_download, info_output]
+        outputs=[lrc_download]
     )
     
     process_btn.click(
         fn=process_and_update,
         inputs=[audio_input, bilingual_checkbox],
-        outputs=[text_output, lrc_download, info_output]
+        outputs=[text_output, lrc_download]
     )
 
 # 主程序入口
