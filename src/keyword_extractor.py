@@ -113,10 +113,15 @@ artificial /ˌɑːtɪˈfɪʃəl/ 人工的，人造的
                 phonetic = match.group(2).strip()
                 explanation = match.group(3).strip()
                 
+                # 获取COCA词频排名
+                from coca_lookup import coca_lookup
+                coca_rank = coca_lookup.get_frequency_rank(word)
+                
                 keywords.append({
                     'key_word': word,
                     'phonetic_symbol': f"/{phonetic}/",
-                    'explain_text': explanation
+                    'explain_text': explanation,
+                    'coca': coca_rank
                 })
             else:
                 # 尝试其他可能的格式
@@ -131,10 +136,15 @@ artificial /ˌɑːtɪˈfɪʃəl/ 人工的，人造的
                         phonetic = phonetic_match.group(1)
                         explanation = remaining.replace(f"/{phonetic}/", "").strip()
                         
+                        # 获取COCA词频排名
+                        from coca_lookup import coca_lookup
+                        coca_rank = coca_lookup.get_frequency_rank(word_part)
+                        
                         keywords.append({
                             'key_word': word_part,
                             'phonetic_symbol': f"/{phonetic}/",
-                            'explain_text': explanation
+                            'explain_text': explanation,
+                            'coca': coca_rank
                         })
         
         return keywords

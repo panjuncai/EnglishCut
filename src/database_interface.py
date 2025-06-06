@@ -84,10 +84,13 @@ def create_database_interface():
                         with gr.Row():
                             load_keywords_btn = gr.Button("📚 加载关键词", variant="secondary")
                             extract_keywords_btn = gr.Button("🤖 AI提取关键词", variant="primary")
+                        with gr.Row():
+                            update_coca_btn = gr.Button("🔄 更新COCA", variant="secondary", size="sm")
+                            coca_update_status = gr.Textbox(label="更新状态", interactive=False, placeholder="等待更新...")
                 
                 keywords_table = gr.Dataframe(
-                    headers=["ID", "单词", "音标", "解释", "来源系列", "时间段"],
-                    datatype=["number", "str", "str", "str", "str", "str"],
+                    headers=["ID", "单词", "音标", "解释", "COCA排名", "频率等级", "来源系列", "时间段"],
+                    datatype=["number", "str", "str", "str", "number", "str", "str", "str"],
                     label="关键词列表",
                     interactive=False,
                     wrap=True
@@ -101,6 +104,7 @@ def create_database_interface():
                     with gr.Column():
                         add_subtitle_id = gr.Number(label="字幕ID", precision=0)
                         add_keyword = gr.Textbox(label="单词")
+                        add_coca = gr.Number(label="COCA排名（可选）", precision=0, placeholder="留空自动查询")
                     with gr.Column():
                         add_phonetic = gr.Textbox(label="音标（可选）", placeholder="如: /ˈɪntəˌnet/")
                         add_explanation = gr.Textbox(label="解释", placeholder="单词的中文解释")
@@ -209,11 +213,22 @@ def create_database_interface():
                 table_data = []
                 for result in results:
                     time_range = f"{result.get('begin_time', 0):.1f}s - {result.get('end_time', 0):.1f}s"
+                    coca_rank = result.get('coca', None)
+                    
+                    # 获取频率等级
+                    if coca_rank:
+                        from coca_lookup import coca_lookup
+                        frequency_level = coca_lookup.get_frequency_level(coca_rank)
+                    else:
+                        frequency_level = "未知"
+                    
                     table_data.append([
                         result['id'],
                         result['key_word'],
                         result.get('phonetic_symbol', ''),
                         result.get('explain_text', ''),
+                        coca_rank or '',
+                        frequency_level,
                         result.get('series_name', ''),
                         time_range
                     ])
@@ -238,11 +253,22 @@ def create_database_interface():
                 table_data = []
                 for keyword in keywords:
                     time_range = f"{keyword.get('begin_time', 0):.1f}s - {keyword.get('end_time', 0):.1f}s"
+                    coca_rank = keyword.get('coca', None)
+                    
+                    # 获取频率等级
+                    if coca_rank:
+                        from coca_lookup import coca_lookup
+                        frequency_level = coca_lookup.get_frequency_level(coca_rank)
+                    else:
+                        frequency_level = "未知"
+                    
                     table_data.append([
                         keyword['id'],
                         keyword['key_word'],
                         keyword.get('phonetic_symbol', ''),
                         keyword.get('explain_text', ''),
+                        coca_rank or '',
+                        frequency_level,
                         "",  # 系列名（因为已经按系列筛选）
                         time_range
                     ])
@@ -291,26 +317,135 @@ def create_database_interface():
                 LOG.error(f"删除系列失败: {e}")
                 return f"❌ 删除失败: {str(e)}"
 
-        def add_keyword_func(subtitle_id, keyword, phonetic, explanation):
+        def add_keyword_func(subtitle_id, keyword, coca_rank, phonetic, explanation):
             """添加关键词"""
             if not subtitle_id or not keyword.strip():
                 return "❌ 请填写字幕ID和关键词"
             
             try:
+                # 如果未提供COCA排名，自动从数据库查询
+                if not coca_rank:
+                    from coca_lookup import coca_lookup
+                    coca_rank = coca_lookup.get_frequency_rank(keyword.strip())
+                
                 keyword_data = [{
                     'key_word': keyword.strip(),
                     'phonetic_symbol': phonetic.strip() if phonetic else '',
-                    'explain_text': explanation.strip() if explanation else ''
+                    'explain_text': explanation.strip() if explanation else '',
+                    'coca': int(coca_rank) if coca_rank else None
                 }]
                 
                 keyword_ids = db_manager.create_keywords(int(subtitle_id), keyword_data)
                 if keyword_ids:
-                    return f"✅ 成功添加关键词: {keyword} (ID: {keyword_ids[0]})"
+                    coca_info = f" (COCA: {coca_rank})" if coca_rank else ""
+                    return f"✅ 成功添加关键词: {keyword}{coca_info} (ID: {keyword_ids[0]})"
                 else:
                     return "❌ 添加失败"
             except Exception as e:
                 LOG.error(f"添加关键词失败: {e}")
                 return f"❌ 添加失败: {str(e)}"
+
+        def update_coca_for_series(series_id):
+            """更新指定系列的COCA信息"""
+            if not series_id:
+                yield "❌ 请输入有效的系列ID"
+                return
+            
+            try:
+                series_id = int(series_id)
+                
+                # 检查系列是否存在
+                series_list = db_manager.get_series()
+                target_series = None
+                for series in series_list:
+                    if series['id'] == series_id:
+                        target_series = series
+                        break
+                
+                if not target_series:
+                    yield "❌ 找不到指定的系列"
+                    return
+                
+                yield f"🔍 开始更新系列 '{target_series['name']}' 的COCA信息..."
+                
+                # 获取该系列的所有关键词
+                keywords = db_manager.get_keywords(series_id=series_id)
+                if not keywords:
+                    yield "❌ 该系列没有关键词数据"
+                    return
+                
+                yield f"📚 找到 {len(keywords)} 个关键词，开始更新COCA排名..."
+                
+                from coca_lookup import coca_lookup
+                import sqlite3
+                
+                updated_count = 0
+                skipped_count = 0
+                failed_count = 0
+                
+                with sqlite3.connect(db_manager.db_path) as conn:
+                    cursor = conn.cursor()
+                    
+                    for i, keyword in enumerate(keywords):
+                        try:
+                            word = keyword['key_word']
+                            is_phrase = ' ' in word  # 判断是否为短语
+                            
+                            # 检查是否已有COCA信息
+                            if keyword.get('coca') is not None and not is_phrase:
+                                # 单词有COCA排名就跳过，但短语需要强制更新
+                                skipped_count += 1
+                                progress = f"处理中: {i+1}/{len(keywords)} (已更新: {updated_count}, 跳过: {skipped_count}, 失败: {failed_count})"
+                                yield f"⏭️ '{word}' 已有COCA排名 {keyword['coca']}，跳过\n{progress}"
+                                continue
+                            elif keyword.get('coca') is not None and is_phrase:
+                                # 短语需要强制更新到20000+
+                                progress = f"处理中: {i+1}/{len(keywords)} (已更新: {updated_count}, 跳过: {skipped_count}, 失败: {failed_count})"
+                                yield f"🔄 '{word}' 是短语，强制更新COCA排名（旧值: {keyword['coca']}）\n{progress}"
+                            
+                            # 查询COCA排名
+                            coca_rank = coca_lookup.get_frequency_rank(word)
+                            
+                            if coca_rank:
+                                # 更新数据库
+                                cursor.execute(
+                                    "UPDATE t_keywords SET coca = ? WHERE id = ?",
+                                    (coca_rank, keyword['id'])
+                                )
+                                updated_count += 1
+                                
+                                freq_level = coca_lookup.get_frequency_level(coca_rank)
+                                progress = f"处理中: {i+1}/{len(keywords)} (已更新: {updated_count}, 跳过: {skipped_count}, 失败: {failed_count})"
+                                update_type = "强制更新" if is_phrase and keyword.get('coca') is not None else "新增"
+                                yield f"✅ '{word}' → COCA排名: {coca_rank} ({freq_level}) [{update_type}]\n{progress}"
+                            else:
+                                failed_count += 1
+                                progress = f"处理中: {i+1}/{len(keywords)} (已更新: {updated_count}, 跳过: {skipped_count}, 失败: {failed_count})"
+                                yield f"⚠️ '{word}' 未找到COCA排名\n{progress}"
+                            
+                        except Exception as e:
+                            failed_count += 1
+                            progress = f"处理中: {i+1}/{len(keywords)} (已更新: {updated_count}, 跳过: {skipped_count}, 失败: {failed_count})"
+                            yield f"❌ '{word}' 更新失败: {str(e)}\n{progress}"
+                    
+                    conn.commit()
+                
+                # 最终报告
+                final_result = f"""🎉 COCA更新完成！
+
+📊 **更新统计**:
+- ✅ 成功更新: {updated_count} 个
+- ⏭️ 已有排名: {skipped_count} 个  
+- ❌ 查询失败: {failed_count} 个
+- 📚 总计处理: {len(keywords)} 个关键词
+
+💡 提示: 刷新关键词列表查看更新结果"""
+
+                yield final_result
+                
+            except Exception as e:
+                LOG.error(f"更新COCA信息失败: {e}")
+                yield f"❌ 更新失败: {str(e)}"
 
         def extract_keywords_ai(series_id):
             """使用AI提取关键词"""
@@ -410,7 +545,7 @@ def create_database_interface():
         
         add_keyword_btn.click(
             fn=add_keyword_func,
-            inputs=[add_subtitle_id, add_keyword, add_phonetic, add_explanation],
+            inputs=[add_subtitle_id, add_keyword, add_coca, add_phonetic, add_explanation],
             outputs=[add_result]
         )
         
@@ -418,6 +553,12 @@ def create_database_interface():
             fn=extract_keywords_ai,
             inputs=[keyword_series_id],
             outputs=[extract_status, extract_progress]
+        )
+        
+        update_coca_btn.click(
+            fn=update_coca_for_series,
+            inputs=[keyword_series_id],
+            outputs=[coca_update_status]
         )
         
         update_video_btn.click(

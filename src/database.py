@@ -96,6 +96,15 @@ class DatabaseManager:
             if 'new_file_path' not in columns:
                 cursor.execute("ALTER TABLE t_series ADD COLUMN new_file_path TEXT")
                 LOG.info("📊 已添加 new_file_path 字段到 t_series 表")
+            
+            # 检查 t_keywords 表是否已有 coca 字段
+            cursor.execute("PRAGMA table_info(t_keywords)")
+            keyword_columns = [column[1] for column in cursor.fetchall()]
+            
+            # 添加 coca 字段（如果不存在）
+            if 'coca' not in keyword_columns:
+                cursor.execute("ALTER TABLE t_keywords ADD COLUMN coca INTEGER")
+                LOG.info("📊 已添加 coca 字段到 t_keywords 表")
                 
         except Exception as e:
             LOG.error(f"❌ 数据库迁移失败: {e}")
@@ -221,7 +230,7 @@ class DatabaseManager:
         
         参数:
         - subtitle_id: 字幕ID
-        - keywords: 单词列表，每个单词包含 key_word, phonetic_symbol, explain_text
+        - keywords: 单词列表，每个单词包含 key_word, phonetic_symbol, explain_text, coca
         
         返回:
         - List[int]: 创建的单词ID列表
@@ -233,13 +242,14 @@ class DatabaseManager:
             
             for keyword in keywords:
                 cursor.execute("""
-                    INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text, coca)
+                    VALUES (?, ?, ?, ?, ?)
                 """, (
                     subtitle_id,
                     keyword.get('key_word'),
                     keyword.get('phonetic_symbol', ''),
-                    keyword.get('explain_text', '')
+                    keyword.get('explain_text', ''),
+                    keyword.get('coca', None)
                 ))
                 
                 keyword_ids.append(cursor.lastrowid)
