@@ -8,6 +8,13 @@ import os
 # 设置环境变量以解决 OpenMP 冲突
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
+# 清除可能干扰 Gradio 启动的代理环境变量
+proxy_vars = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        print(f"🧹 清除代理环境变量: {var}={os.environ[var]}")
+        del os.environ[var]
+
 import gradio as gr
 from logger import LOG
 from media_processor import process_media_file, get_media_formats_info
