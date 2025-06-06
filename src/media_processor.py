@@ -10,6 +10,14 @@ from logger import LOG
 from file_detector import FileType, validate_file, get_file_info
 from video_processor import extract_audio_from_video, check_ffmpeg_availability
 from openai_whisper import asr, generate_lrc_content, save_lrc_file, generate_srt_content, save_srt_file
+try:
+    from database import db_manager
+except ImportError:
+    # 如果在其他目录运行，尝试相对导入
+    import sys
+    import os
+    sys.path.append(os.path.dirname(__file__))
+    from database import db_manager
 
 class MediaProcessor:
     """多媒体处理器类"""
@@ -64,6 +72,9 @@ class MediaProcessor:
                 enable_short_subtitles
             )
             
+            # 保存到数据库
+            self._save_to_database(file_info, recognition_result, subtitle_result, enable_translation)
+            
             # 清理临时文件
             self._cleanup_temp_files()
             
@@ -73,6 +84,81 @@ class MediaProcessor:
             LOG.error(f"❌ 处理文件时发生错误: {str(e)}")
             self._cleanup_temp_files()
             return self._create_error_result(f"处理失败: {str(e)}")
+    
+    def _save_to_database(self, file_info, recognition_result, subtitle_result, is_bilingual):
+        """
+        保存处理结果到数据库
+        
+        参数:
+        - file_info: 文件信息
+        - recognition_result: 识别结果  
+        - subtitle_result: 字幕生成结果
+        - is_bilingual: 是否双语
+        """
+        try:
+            LOG.info(f"🔄 开始保存到数据库: 文件={file_info.get('name', 'Unknown')}, 双语={is_bilingual}")
+            
+            # 1. 创建媒体系列记录
+            series_id = db_manager.create_series(
+                name=file_info['name'],
+                file_path=file_info['path'],
+                file_type=file_info['type'],
+                duration=recognition_result.get('audio_duration')
+            )
+            LOG.info(f"📁 创建媒体系列成功: ID={series_id}")
+            
+            # 2. 准备字幕数据
+            subtitles_data = []
+            chunks = recognition_result.get('chunks', [])
+            LOG.info(f"📝 处理字幕数据: {len(chunks)} 个chunks")
+            
+            if is_bilingual:
+                # 双语模式
+                english_chunks = recognition_result.get('english_chunks', [])
+                chinese_chunks = recognition_result.get('chinese_chunks', [])
+                LOG.info(f"🌐 双语模式: 英文chunks={len(english_chunks)}, 中文chunks={len(chinese_chunks)}")
+                
+                for i, chunk in enumerate(chunks):
+                    timestamp = chunk.get('timestamp', [0, 0])
+                    english_text = english_chunks[i].get('text', '') if i < len(english_chunks) else ''
+                    chinese_text = chinese_chunks[i].get('text', '') if i < len(chinese_chunks) else ''
+                    
+                    subtitles_data.append({
+                        'begin_time': timestamp[0],
+                        'end_time': timestamp[1],
+                        'english_text': english_text,
+                        'chinese_text': chinese_text
+                    })
+            else:
+                # 单语模式
+                LOG.info("📝 单语模式处理")
+                for chunk in chunks:
+                    timestamp = chunk.get('timestamp', [0, 0])
+                    text = chunk.get('text', '')
+                    
+                    subtitles_data.append({
+                        'begin_time': timestamp[0],
+                        'end_time': timestamp[1],
+                        'english_text': text,
+                        'chinese_text': ''
+                    })
+            
+            # 3. 批量创建字幕记录
+            if subtitles_data:
+                LOG.info(f"💾 准备保存 {len(subtitles_data)} 条字幕到数据库")
+                subtitle_ids = db_manager.create_subtitles(series_id, subtitles_data)
+                LOG.info(f"✅ 数据库保存成功: 系列ID {series_id}, {len(subtitle_ids)} 条字幕")
+                
+                # 4. 提取并保存重点单词（可选功能，暂时留空，后续实现）
+                # self._extract_and_save_keywords(subtitle_ids, subtitles_data)
+            else:
+                LOG.warning("⚠️ 没有字幕数据需要保存")
+            
+        except Exception as e:
+            LOG.error(f"❌ 保存到数据库失败: {e}")
+            import traceback
+            LOG.error(f"详细错误信息: {traceback.format_exc()}")
+            # 不抛出异常，避免影响主流程
     
     def _prepare_audio_file(self, file_path, file_type):
         """
