@@ -146,7 +146,7 @@ class VideoSubtitleBurner:
     
     def _build_video_filter(self, top_text: str, bottom_text: str, keyword_text: Dict = None) -> str:
         """
-        构建FFmpeg视频滤镜，使用与pre_process.py相同的视频滤镜逻辑
+        构建FFmpeg视频滤镜，使用与pre_process.py相同的视频滤镜逻辑，但不再进行9:16裁剪
         
         参数:
         - top_text: 顶部文字
@@ -178,28 +178,23 @@ class VideoSubtitleBurner:
         else:
             LOG.info(f"找到抖音字体: {douyin_font}")
         
-        # 视频滤镜：从原视频中挖出9:16比例的部分，不变形，然后添加顶部和底部区域
-        # 顶部占10%，主视频占60%，底部占适合4行字幕的高度
+        # 视频滤镜：假设输入已经是9:16比例的视频，只添加顶部和底部区域
         filter_chain = [
-            # 第1步：从原16:9视频中央挖出9:16比例的部分，忽略底部1/5的广告字幕
-            # 原视频高度的4/5作为有效高度，在此基础上挖取9:16比例
-            "crop=ih*4/5*9/16:ih*4/5:iw/2-ih*4/5*9/16/2:0",  # 从中心裁剪9:16比例，避开底部1/5区域
+            # 保持视频原始尺寸（应该已经是720:1280）
+            "scale=720:1280",  # 确保尺寸一致
             
-            # 第2步：缩放到标准尺寸
-            "scale=720:1280",  # 缩放到标准的9:16尺寸
-            
-            # 第3步：顶部区域 - 创建完全不透明的黑色背景
+            # 第1步：顶部区域 - 创建完全不透明的黑色背景
             "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
             
-            # 第4步：底部区域 - 创建单一浅米色背景
+            # 第2步：底部区域 - 创建单一浅米色背景
             # 底部区域从1080像素开始，高度为200像素（适合4行字幕）
             "drawbox=x=0:y=1080:w=720:h=200:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
             
-            # 第5步：添加顶部文字（调大白色字体，使用粗体字体文件）
+            # 第3步：添加顶部文字（调大白色字体，使用粗体字体文件）
             f"drawtext=text='{top_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
         ]
         
-        # 第6步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
+        # 第4步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
         # 将底部文字分行并居中处理
         if bottom_text:
             # 分割英文和中文部分（如果有换行符）
@@ -291,7 +286,7 @@ class VideoSubtitleBurner:
                     f"bordercolor=black:borderw=4:box=0"
                 )
         
-        # 第7步：如果提供了重点单词信息，添加单词展示区域
+        # 第5步：如果提供了重点单词信息，添加单词展示区域
         if keyword_text and isinstance(keyword_text, dict):
             # 获取单词信息
             word = keyword_text.get('word', '')
@@ -557,15 +552,22 @@ class VideoSubtitleBurner:
                     progress_callback("❌ 找不到指定的系列")
                 return None
             
-            # 获取原视频路径
-            input_video = target_series.get('file_path')
-            if not input_video or not os.path.exists(input_video):
+            # 检查是否存在预处理的9:16视频
+            input_video = None
+            if 'new_file_path' in target_series and target_series['new_file_path'] and os.path.exists(target_series['new_file_path']):
+                input_video = target_series['new_file_path']
                 if progress_callback:
-                    progress_callback("❌ 找不到原视频文件")
-                return None
-            
-            if progress_callback:
-                progress_callback(f"📹 找到视频文件: {os.path.basename(input_video)}")
+                    progress_callback(f"📹 使用预处理的9:16视频: {os.path.basename(input_video)}")
+            else:
+                # 获取原视频路径
+                input_video = target_series.get('file_path')
+                if not input_video or not os.path.exists(input_video):
+                    if progress_callback:
+                        progress_callback("❌ 找不到视频文件")
+                    return None
+                
+                if progress_callback:
+                    progress_callback(f"📹 使用原始视频文件: {os.path.basename(input_video)}")
             
             # 获取烧制数据
             burn_data = self.get_key_words_for_burning(series_id)

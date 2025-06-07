@@ -36,8 +36,10 @@ def create_database_interface():
                 with gr.Row():
                     with gr.Column(scale=3):
                         series_table = gr.Dataframe(
-                            headers=["ID", "名称", "文件类型", "时长(秒)", "烧制视频名", "烧制路径", "创建时间"],
-                            datatype=["number", "str", "str", "number", "str", "str", "str"],
+                            headers=["ID", "名称", "文件类型", "时长(秒)", "9:16视频名", "9:16视频路径", 
+                                    "关键词视频名", "关键词视频路径", "字幕视频名", "字幕视频路径", "创建时间"],
+                            datatype=["number", "str", "str", "number", "str", "str", 
+                                     "str", "str", "str", "str", "str"],
                             label="媒体系列列表",
                             interactive=False,
                             wrap=True
@@ -51,10 +53,22 @@ def create_database_interface():
                         
                         # 烧制视频信息更新
                         with gr.Group():
-                            gr.Markdown("### 🎬 更新烧制视频信息")
+                            gr.Markdown("### 🎬 更新视频信息")
                             update_series_id = gr.Number(label="系列ID", precision=0)
-                            update_new_name = gr.Textbox(label="烧制视频名称", placeholder="例: output_with_subtitles.mp4")
-                            update_new_path = gr.Textbox(label="烧制视频路径", placeholder="例: /path/to/output_video.mp4")
+                            
+                            with gr.Tabs():
+                                with gr.TabItem("9:16预处理视频"):
+                                    update_new_name = gr.Textbox(label="9:16视频名称", placeholder="例: video_9_16.mp4")
+                                    update_new_path = gr.Textbox(label="9:16视频路径", placeholder="例: /path/to/video_9_16.mp4")
+                                
+                                with gr.TabItem("关键词烧制视频"):
+                                    update_second_name = gr.Textbox(label="关键词视频名称", placeholder="例: video_keywords.mp4")
+                                    update_second_path = gr.Textbox(label="关键词视频路径", placeholder="例: /path/to/video_keywords.mp4")
+                                
+                                with gr.TabItem("字幕烧制视频"):
+                                    update_third_name = gr.Textbox(label="字幕视频名称", placeholder="例: video_subtitles.mp4")
+                                    update_third_path = gr.Textbox(label="字幕视频路径", placeholder="例: /path/to/video_subtitles.mp4")
+                            
                             update_video_btn = gr.Button("💾 更新信息", variant="primary")
                             update_result = gr.Textbox(label="更新结果", interactive=False)
             
@@ -183,13 +197,21 @@ def create_database_interface():
                 # 转换为表格数据
                 table_data = []
                 for series in series_list:
-                    # 处理烧制视频信息的显示
-                    new_name = series.get('new_name', '') or '未烧制'
+                    # 处理视频信息的显示
+                    new_name = series.get('new_name', '') or '未处理'
                     new_path = series.get('new_file_path', '') or '未设置'
+                    second_name = series.get('second_name', '') or '未烧制'
+                    second_path = series.get('second_file_path', '') or '未设置'
+                    third_name = series.get('third_name', '') or '未烧制'
+                    third_path = series.get('third_file_path', '') or '未设置'
                     
                     # 截断过长的路径显示
                     if len(new_path) > 50:
                         new_path = new_path[:47] + '...'
+                    if len(second_path) > 50:
+                        second_path = second_path[:47] + '...'
+                    if len(third_path) > 50:
+                        third_path = third_path[:47] + '...'
                     
                     table_data.append([
                         series['id'],
@@ -198,6 +220,10 @@ def create_database_interface():
                         series.get('duration', 0) or 0,
                         new_name,
                         new_path,
+                        second_name,
+                        second_path,
+                        third_name,
+                        third_path,
                         series['created_at']
                     ])
                 
@@ -313,28 +339,38 @@ def create_database_interface():
                 LOG.error(f"加载关键词失败: {e}")
                 return []
 
-        def update_video_info_func(series_id, new_name, new_path):
+        def update_video_info_func(series_id, new_name, new_path, second_name, second_path, third_name, third_path):
             """更新系列的烧制视频信息"""
             if not series_id:
                 return "❌ 请输入有效的系列ID"
             
-            if not new_name.strip() and not new_path.strip():
-                return "❌ 请至少输入视频名称或路径中的一个"
+            has_input = any([
+                new_name.strip(), new_path.strip(),
+                second_name.strip(), second_path.strip(),
+                third_name.strip(), third_path.strip()
+            ])
+            
+            if not has_input:
+                return "❌ 请至少输入一个视频信息字段"
             
             try:
                 success = db_manager.update_series_video_info(
                     int(series_id),
                     new_name=new_name.strip() if new_name.strip() else None,
-                    new_file_path=new_path.strip() if new_path.strip() else None
+                    new_file_path=new_path.strip() if new_path.strip() else None,
+                    second_name=second_name.strip() if second_name.strip() else None,
+                    second_file_path=second_path.strip() if second_path.strip() else None,
+                    third_name=third_name.strip() if third_name.strip() else None,
+                    third_file_path=third_path.strip() if third_path.strip() else None
                 )
                 
                 if success:
-                    return f"✅ 系列 {series_id} 的烧制视频信息已更新"
+                    return f"✅ 系列 {series_id} 的视频信息已更新"
                 else:
                     return f"❌ 更新失败，请检查系列ID是否存在"
                     
             except Exception as e:
-                LOG.error(f"更新烧制视频信息失败: {e}")
+                LOG.error(f"更新视频信息失败: {e}")
                 return f"❌ 更新失败: {str(e)}"
 
         def delete_series_func(series_id):
@@ -693,8 +729,14 @@ def create_database_interface():
         
         update_video_btn.click(
             fn=update_video_info_func,
-            inputs=[update_series_id, update_new_name, update_new_path],
+            inputs=[update_series_id, update_new_name, update_new_path, 
+                   update_second_name, update_second_path, 
+                   update_third_name, update_third_path],
             outputs=[update_result]
+        ).then(
+            fn=load_series_list,
+            inputs=[],
+            outputs=[series_table]
         )
         
         # 视频烧制事件绑定

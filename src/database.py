@@ -97,6 +97,26 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE t_series ADD COLUMN new_file_path TEXT")
                 LOG.info("📊 已添加 new_file_path 字段到 t_series 表")
             
+            # 添加 second_name 字段（如果不存在）
+            if 'second_name' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN second_name TEXT")
+                LOG.info("📊 已添加 second_name 字段到 t_series 表")
+            
+            # 添加 second_file_path 字段（如果不存在）
+            if 'second_file_path' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN second_file_path TEXT")
+                LOG.info("📊 已添加 second_file_path 字段到 t_series 表")
+            
+            # 添加 third_name 字段（如果不存在）
+            if 'third_name' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN third_name TEXT")
+                LOG.info("📊 已添加 third_name 字段到 t_series 表")
+            
+            # 添加 third_file_path 字段（如果不存在）
+            if 'third_file_path' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN third_file_path TEXT")
+                LOG.info("📊 已添加 third_file_path 字段到 t_series 表")
+            
             # 检查 t_keywords 表是否已有 coca 字段
             cursor.execute("PRAGMA table_info(t_keywords)")
             keyword_columns = [column[1] for column in cursor.fetchall()]
@@ -110,7 +130,9 @@ class DatabaseManager:
             LOG.error(f"❌ 数据库迁移失败: {e}")
     
     def create_series(self, name: str, file_path: str = None, file_type: str = None, duration: float = None, 
-                     new_name: str = None, new_file_path: str = None) -> int:
+                     new_name: str = None, new_file_path: str = None,
+                     second_name: str = None, second_file_path: str = None,
+                     third_name: str = None, third_file_path: str = None) -> int:
         """
         创建新的媒体系列
         
@@ -119,8 +141,12 @@ class DatabaseManager:
         - file_path: 原始文件路径
         - file_type: 文件类型（audio/video）
         - duration: 时长（秒）
-        - new_name: 烧制后的新视频名称
-        - new_file_path: 烧制后的新视频文件路径
+        - new_name: 烧制后的新视频名称 (9:16预处理视频)
+        - new_file_path: 烧制后的新视频文件路径 (9:16预处理视频)
+        - second_name: 重点单词烧制视频名称
+        - second_file_path: 重点单词烧制视频文件路径
+        - third_name: 重点单词+字幕烧制视频名称
+        - third_file_path: 重点单词+字幕烧制视频文件路径
         
         返回:
         - series_id: 新创建的系列ID
@@ -128,9 +154,15 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO t_series (name, file_path, file_type, duration, new_name, new_file_path)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, file_path, file_type, duration, new_name, new_file_path))
+                INSERT INTO t_series (name, file_path, file_type, duration, 
+                                     new_name, new_file_path,
+                                     second_name, second_file_path,
+                                     third_name, third_file_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (name, file_path, file_type, duration, 
+                 new_name, new_file_path,
+                 second_name, second_file_path,
+                 third_name, third_file_path))
             
             series_id = cursor.lastrowid
             conn.commit()
@@ -138,14 +170,20 @@ class DatabaseManager:
             LOG.info(f"📊 创建媒体系列: {name} (ID: {series_id})")
             return series_id
     
-    def update_series_video_info(self, series_id: int, new_name: str = None, new_file_path: str = None) -> bool:
+    def update_series_video_info(self, series_id: int, new_name: str = None, new_file_path: str = None,
+                            second_name: str = None, second_file_path: str = None,
+                            third_name: str = None, third_file_path: str = None) -> bool:
         """
         更新系列的烧制视频信息
         
         参数:
         - series_id: 系列ID
-        - new_name: 烧制后的新视频名称
-        - new_file_path: 烧制后的新视频文件路径
+        - new_name: 烧制后的新视频名称 (9:16预处理视频)
+        - new_file_path: 烧制后的新视频文件路径 (9:16预处理视频)
+        - second_name: 重点单词烧制视频名称
+        - second_file_path: 重点单词烧制视频文件路径
+        - third_name: 重点单词+字幕烧制视频名称
+        - third_file_path: 重点单词+字幕烧制视频文件路径
         
         返回:
         - bool: 是否更新成功
@@ -165,6 +203,22 @@ class DatabaseManager:
                 if new_file_path is not None:
                     update_fields.append("new_file_path = ?")
                     update_values.append(new_file_path)
+                
+                if second_name is not None:
+                    update_fields.append("second_name = ?")
+                    update_values.append(second_name)
+                
+                if second_file_path is not None:
+                    update_fields.append("second_file_path = ?")
+                    update_values.append(second_file_path)
+                
+                if third_name is not None:
+                    update_fields.append("third_name = ?")
+                    update_values.append(third_name)
+                
+                if third_file_path is not None:
+                    update_fields.append("third_file_path = ?")
+                    update_values.append(third_file_path)
                 
                 if not update_fields:
                     LOG.warning("⚠️ 没有提供要更新的字段")

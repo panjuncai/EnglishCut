@@ -323,9 +323,13 @@ def save_lrc_file(result_data, audio_filepath):
         # 生成LRC内容
         lrc_content = generate_lrc_content(result_data, audio_name)
         
+        # 确保output目录存在
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+        
         # 创建LRC文件路径
-        lrc_filename = f"{audio_name}_subtitle.lrc"
-        lrc_filepath = os.path.join(tempfile.gettempdir(), lrc_filename)
+        lrc_filename = f"{audio_name}.lrc"
+        lrc_filepath = os.path.join(output_dir, lrc_filename)
         
         # 写入LRC文件
         with open(lrc_filepath, 'w', encoding='utf-8') as f:
@@ -441,9 +445,13 @@ def save_srt_file(result_data, audio_filepath):
         # 生成SRT内容
         srt_content = generate_srt_content(result_data, audio_name)
         
-        # 创建SRT文件路径
-        srt_filename = f"{audio_name}_subtitle.srt"
-        srt_filepath = os.path.join(tempfile.gettempdir(), srt_filename)
+        # 确保output目录存在
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 创建SRT文件路径 - 直接使用原文件名.srt
+        srt_filename = f"{audio_name}.srt"
+        srt_filepath = os.path.join(output_dir, srt_filename)
         
         # 写入SRT文件
         with open(srt_filepath, 'w', encoding='utf-8') as f:

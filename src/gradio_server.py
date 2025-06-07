@@ -61,13 +61,13 @@ def create_main_interface():
                 
                 translation_checkbox = gr.Checkbox(
                     label="🌐 启用中文翻译",
-                    value=True,
+                    value=False,
                     info="生成英中双语字幕"
                 )
                 
                 short_subtitle_checkbox = gr.Checkbox(
                     label="📱 短视频字幕模式",
-                    value=True,
+                    value=False,
                     info="针对抖音等平台优化，生成适合手机屏幕的短句字幕"
                 )
                 
@@ -175,6 +175,12 @@ def create_main_interface():
                 # 在新版Gradio中，file_path是一个文件对象，需要获取其name属性
                 actual_file_path = file_path.name if hasattr(file_path, 'name') else file_path
                 
+                # 获取文件类型
+                file_type = get_file_type(actual_file_path)
+                
+                # 判断是否为视频文件
+                is_video = file_type == FileType.VIDEO
+                
                 # 调用统一处理器
                 result = process_media_file(
                     file_path=actual_file_path,
@@ -199,6 +205,10 @@ def create_main_interface():
 - **处理时间**: {result.get('processing_time', 0):.1f} 秒
 - **双语模式**: {'是' if result.get('is_bilingual') else '否'}
 """
+                    
+                    # 如果是视频，添加9:16预处理提示
+                    if is_video:
+                        processing_info_text += "\n✅ **视频已自动预处理为9:16竖屏格式**\n- 适合后续在数据库管理界面直接烧制\n- 预处理结果已保存到数据库中"
                     
                     yield (
                         recognized_text,
