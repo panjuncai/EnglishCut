@@ -429,6 +429,45 @@ class DatabaseManager:
         except Exception as e:
             LOG.error(f"删除系列失败: {e}")
             return False
+    
+    def get_subtitle_by_id(self, subtitle_id: int) -> Optional[Dict]:
+        """
+        获取指定ID的字幕
+        
+        参数:
+        - subtitle_id: 字幕ID
+        
+        返回:
+        - Dict: 字幕信息，如果不存在则返回None
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT * FROM t_subtitle 
+                WHERE id = ?
+            """, (subtitle_id,))
+            
+            result = cursor.fetchone()
+            if result:
+                return dict(result)
+            return None
+    
+    def get_translation(self, subtitle_id: int) -> Optional[Dict]:
+        """
+        获取指定字幕的翻译
+        
+        参数:
+        - subtitle_id: 字幕ID
+        
+        返回:
+        - Dict: 包含中文翻译的字典，如果不存在则返回None
+        """
+        subtitle = self.get_subtitle_by_id(subtitle_id)
+        if subtitle and 'chinese_text' in subtitle:
+            return {'text': subtitle['chinese_text']}
+        return None
 
 # 全局数据库实例
 db_manager = DatabaseManager() 

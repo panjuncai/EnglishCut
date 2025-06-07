@@ -110,22 +110,27 @@ class VideoSubtitleBurner:
         
         return selected
     
-    def create_subtitle_file(self, burn_data: List[Dict], subtitle_path: str) -> str:
+    def create_subtitle_file(self, burn_data: List[Dict], subtitle_path: str) -> Tuple[str, str]:
         """
-        创建烧制用的SRT字幕文件（使用force_style设置背景色）
+        创建烧制用的SRT字幕文件
+        创建两个字幕文件：一个用于原视频区域的中英文字幕，一个用于底部区域的重点单词
         
         参数:
         - burn_data: 烧制数据
         - subtitle_path: 字幕文件保存路径
         
         返回:
-        - str: 字幕文件路径
+        - Tuple[str, str]: (原文字幕文件路径, 重点单词字幕文件路径)
         """
         try:
-            # 使用SRT格式，通过FFmpeg的force_style参数设置样式
-            srt_path = subtitle_path.replace('.ass', '.srt')
+            # 两个SRT文件路径
+            orig_subtitle_path = subtitle_path.replace('.ass', '_original.srt')
+            keyword_subtitle_path = subtitle_path.replace('.ass', '_keywords.srt')
             
-            subtitle_content = []
+            # 原文字幕内容
+            orig_subtitle_content = []
+            # 重点单词字幕内容
+            keyword_subtitle_content = []
             
             for i, item in enumerate(burn_data, 1):
                 start_time = self._seconds_to_srt_time(item['begin_time'])
@@ -135,32 +140,56 @@ class VideoSubtitleBurner:
                 phonetic = item['phonetic'].strip('/')
                 explanation = item['explanation']
                 
-                # 构建专业分层字幕文本 - 模仿图片中的样式
-                lines = []
+                # 获取原始英文字幕
+                subtitle_id = item['subtitle_id']
+                subtitle_info = db_manager.get_subtitle_by_id(subtitle_id)
                 
-                # 第一行：单词 + 音标（如图片所示的格式）
+                # 构建原文字幕内容（英文+中文）
+                orig_lines = []
+                if subtitle_info:
+                    if 'english_text' in subtitle_info and subtitle_info['english_text']:
+                        orig_lines.append(subtitle_info['english_text'])
+                    if 'chinese_text' in subtitle_info and subtitle_info['chinese_text']:
+                        orig_lines.append(subtitle_info['chinese_text'])
+                
+                # 构建重点单词字幕内容
+                keyword_lines = []
+                # 单词 + 音标格式
+                highlight_line = ""
                 if phonetic:
-                    lines.append(f"{keyword} [{phonetic}]")
+                    highlight_line = f"{keyword} [{phonetic}]"
                 else:
-                    lines.append(keyword)
+                    highlight_line = keyword
                 
-                # 第二行：词性 + 中文解释
+                keyword_lines.append(highlight_line)
+                
+                # 解释行（词性 + 中文解释）
                 if explanation:
-                    lines.append(f"{explanation}")  # 假设是形容词，可以后续优化
+                    keyword_lines.append(f"adj. {explanation}")
                 
-                subtitle_text = '\n'.join(lines)
+                # 添加到各自的字幕内容
+                if orig_lines:
+                    orig_subtitle_content.append(f"{i}")
+                    orig_subtitle_content.append(f"{start_time} --> {end_time}")
+                    orig_subtitle_content.append('\n'.join(orig_lines))
+                    orig_subtitle_content.append("")  # 空行分隔
                 
-                subtitle_content.append(f"{i}")
-                subtitle_content.append(f"{start_time} --> {end_time}")
-                subtitle_content.append(subtitle_text)
-                subtitle_content.append("")  # 空行分隔
+                if keyword_lines:
+                    keyword_subtitle_content.append(f"{i}")
+                    keyword_subtitle_content.append(f"{start_time} --> {end_time}")
+                    keyword_subtitle_content.append('\n'.join(keyword_lines))
+                    keyword_subtitle_content.append("")  # 空行分隔
             
-            # 写入SRT文件
-            with open(srt_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(subtitle_content))
+            # 写入原文字幕文件
+            with open(orig_subtitle_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(orig_subtitle_content))
             
-            LOG.info(f"📝 创建SRT字幕文件: {srt_path}")
-            return srt_path
+            # 写入重点单词字幕文件
+            with open(keyword_subtitle_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(keyword_subtitle_content))
+            
+            LOG.info(f"📝 创建字幕文件: {orig_subtitle_path} 和 {keyword_subtitle_path}")
+            return orig_subtitle_path, keyword_subtitle_path
             
         except Exception as e:
             LOG.error(f"创建字幕文件失败: {e}")
@@ -204,6 +233,7 @@ class VideoSubtitleBurner:
                                 input_video: str, 
                                 output_video: str, 
                                 burn_data: List[Dict],
+                                title_text: str = "第二遍: 词汇与文法分析",
                                 progress_callback=None) -> bool:
         """
         烧制视频，添加重点单词字幕
@@ -212,6 +242,7 @@ class VideoSubtitleBurner:
         - input_video: 输入视频路径
         - output_video: 输出视频路径
         - burn_data: 烧制数据
+        - title_text: 顶部标题栏文字
         - progress_callback: 进度回调函数
         
         返回:
@@ -225,7 +256,7 @@ class VideoSubtitleBurner:
             
             # 创建临时SRT字幕文件
             subtitle_path = os.path.join(self.temp_dir, "keywords.srt")
-            actual_subtitle_path = self.create_subtitle_file(burn_data, subtitle_path)
+            orig_subtitle_path, keyword_subtitle_path = self.create_subtitle_file(burn_data, subtitle_path)
             
             if progress_callback:
                 progress_callback("📝 字幕文件创建完成，开始视频处理...")
@@ -234,7 +265,7 @@ class VideoSubtitleBurner:
             cmd = [
                 'ffmpeg', '-y',  # 覆盖输出文件
                 '-i', input_video,  # 输入视频
-                '-vf', self._build_video_filter(actual_subtitle_path),  # 视频滤镜
+                '-vf', self._build_video_filter(orig_subtitle_path, keyword_subtitle_path, title_text),  # 视频滤镜
                 '-aspect', '3:4',  # 设置宽高比为3:4 (竖屏)
                 '-c:a', 'copy',  # 音频直接复制
                 '-preset', 'medium',  # 编码预设
@@ -278,37 +309,53 @@ class VideoSubtitleBurner:
         finally:
             # 清理临时文件
             try:
-                if os.path.exists(actual_subtitle_path):
-                    os.remove(actual_subtitle_path)
+                if os.path.exists(orig_subtitle_path):
+                    os.remove(orig_subtitle_path)
+                if os.path.exists(keyword_subtitle_path):
+                    os.remove(keyword_subtitle_path)
             except:
                 pass
     
-    def _build_video_filter(self, subtitle_path: str) -> str:
+    def _build_video_filter(self, orig_subtitle_path: str, keyword_subtitle_path: str, title_text: str = "第二遍: 词汇与文法分析") -> str:
         """
         构建FFmpeg视频滤镜
         
         参数:
-        - subtitle_path: 字幕文件路径
+        - orig_subtitle_path: 原文字幕文件路径
+        - keyword_subtitle_path: 重点单词字幕文件路径
+        - title_text: 顶部标题栏文字
         
         返回:
         - str: FFmpeg滤镜字符串
         """
         # 转义路径中的特殊字符
-        escaped_path = subtitle_path.replace('\\', '\\\\').replace(':', '\\:').replace('\'', '\\\'')
+        escaped_orig_path = orig_subtitle_path.replace('\\', '\\\\').replace(':', '\\:').replace('\'', '\\\'')
+        escaped_keyword_path = keyword_subtitle_path.replace('\\', '\\\\').replace(':', '\\:').replace('\'', '\\\'')
         
-        # 视频滤镜：16:9裁剪到3:4竖屏 + 底部渐变遮罩 + 烧制美观字幕
+        # 视频滤镜：使用多步处理
+        # 1. 裁剪原视频到竖屏
+        # 2. 添加顶部标题区域和底部词汇区域，使视频整体成为3:4比例
+        # 3. 在新创建的区域上添加文字
         
-        # 使用drawbox创建底部20%渐变黑色遮罩的简化方法
         filter_chain = [
-            # 1. 从16:9中间裁剪出3:4竖屏区域
-            "scale=-1:ih",
-            "crop=ih*3/4:ih:(iw-ow)/2:0",
+            # 第1步：裁剪原视频（从中间裁剪到接近正方形）
+            "scale=-1:ih",  # 保持高度不变，调整宽度
+            "crop=ih*0.9:ih:(iw-ow)/2:0",  # 从中间裁剪接近正方形区域
             
-            # 2. 添加底部20%区域的半透明黑色遮罩
-            "drawbox=x=0:y=ih*3/4:w=iw:h=ih/4:color=yellow@1:t=fill",
+            # 第2步：在上下添加空白区域，形成3:4比例
+            "pad=iw:ih*1.3:0:ih*0.15:lightblue",  # 顶部添加15%高度的浅蓝色区域，底部会自动填充
             
-            # 3. 烧制美观SRT字幕 - 白色字体适配黑色背景
-            f"subtitles='{escaped_path}':force_style='Fontname=Microsoft YaHei,Fontsize=24,PrimaryColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=0,Alignment=2,MarginV=2,MarginL=30,MarginR=30,Bold=0,Spacing=1'"
+            # 第3步：在底部添加黄色区域
+            "drawbox=x=0:y=ih*0.85:w=iw:h=ih*0.3:color=yellow@1:t=fill",  # 底部30%区域填充黄色
+            
+            # 第4步：添加顶部标题文字
+            f"drawtext=text='{title_text}':fontcolor=blue:fontsize=30:x=(w-text_w)/2:y=(h*0.15-text_h)/2:fontfile=/System/Library/Fonts/STHeiti Medium.ttc",
+            
+            # 第5步：烧制原视频中英文字幕（较小字体）
+            f"subtitles='{escaped_orig_path}':force_style='Fontname=Microsoft YaHei,Fontsize=16,PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=4,Outline=1,Shadow=1,Alignment=2,MarginV=5,MarginL=30,MarginR=30,Bold=0,Spacing=1'",
+            
+            # 第6步：烧制底部区域的重点单词（较大字体，应用偏移确保显示在黄色区域）
+            f"subtitles='{escaped_keyword_path}':force_style='Fontname=Microsoft YaHei,Fontsize=30,PrimaryColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=0,Alignment=2,MarginV=250,MarginL=30,MarginR=30,Bold=1,Spacing=1'"
         ]
         
         return ','.join(filter_chain)
@@ -316,6 +363,7 @@ class VideoSubtitleBurner:
     def process_series_video(self, 
                             series_id: int, 
                             output_dir: str = "output",
+                            title_text: str = "第二遍: 词汇与文法分析",
                             progress_callback=None) -> Optional[str]:
         """
         处理整个系列的视频烧制
@@ -323,6 +371,7 @@ class VideoSubtitleBurner:
         参数:
         - series_id: 系列ID
         - output_dir: 输出目录
+        - title_text: 顶部标题栏文字
         - progress_callback: 进度回调函数
         
         返回:
@@ -375,6 +424,7 @@ class VideoSubtitleBurner:
                 input_video, 
                 output_video, 
                 burn_data,
+                title_text,
                 progress_callback
             )
             
