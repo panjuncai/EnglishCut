@@ -6,9 +6,15 @@
 
 import sqlite3
 import os
+import sys
+# 添加当前目录到系统路径，以支持模块导入
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
-from logger import LOG
+from src.logger import LOG
 
 class DatabaseManager:
     """数据库管理器"""
@@ -522,6 +528,76 @@ class DatabaseManager:
         if subtitle and 'chinese_text' in subtitle:
             return {'text': subtitle['chinese_text']}
         return None
+
+    def find_series_by_new_file_path(self, new_file_path: str) -> Optional[Dict]:
+        """
+        根据预处理视频路径查找系列
+        
+        参数:
+        - new_file_path: 预处理视频路径
+        
+        返回:
+        - dict: 系列信息，未找到返回None
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # 查询条件：精确匹配new_file_path
+                cursor.execute("""
+                    SELECT * FROM t_series 
+                    WHERE new_file_path = ?
+                    LIMIT 1
+                """, (new_file_path,))
+                
+                row = cursor.fetchone()
+                if not row:
+                    LOG.warning(f"⚠️ 未找到预处理视频路径对应的系列: {new_file_path}")
+                    
+                    # 尝试通过文件名匹配
+                    file_name = os.path.basename(new_file_path)
+                    cursor.execute("""
+                        SELECT * FROM t_series 
+                        WHERE new_name = ?
+                        LIMIT 1
+                    """, (file_name,))
+                    
+                    row = cursor.fetchone()
+                    if not row:
+                        LOG.warning(f"⚠️ 未找到预处理视频名称对应的系列: {file_name}")
+                        return None
+                
+                return dict(row)
+                
+        except Exception as e:
+            LOG.error(f"❌ 根据预处理视频路径查找系列失败: {e}")
+            return None
+
+    def delete_subtitles_by_series_id(self, series_id: int) -> bool:
+        """
+        删除指定系列的所有字幕
+        
+        参数:
+        - series_id: 系列ID
+        
+        返回:
+        - bool: 是否删除成功
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM t_subtitle WHERE series_id = ?", (series_id,))
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                LOG.info(f"📊 删除系列ID={series_id}的字幕: {deleted_count}条")
+                return True
+                    
+        except Exception as e:
+            LOG.error(f"❌ 删除字幕失败: {e}")
+            return False
 
 # 全局数据库实例
 db_manager = DatabaseManager() 

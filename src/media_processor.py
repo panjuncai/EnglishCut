@@ -5,6 +5,10 @@
 """
 
 import os
+import sys
+# 添加当前目录到系统路径，以支持模块导入
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import tempfile
 import subprocess
 import time
@@ -33,47 +37,80 @@ class MediaProcessor:
         os.makedirs(self.processed_videos_dir, exist_ok=True)
         LOG.info("🎵 多媒体处理器初始化完成")
     
-    def process_file(self, file_path, output_format="SRT", enable_translation=False, enable_short_subtitles=False):
+    def process_file(self, file_path, output_format="SRT", enable_translation=False, 
+                 enable_short_subtitles=False, only_preprocess=False, skip_preprocess=False):
         """
-        处理多媒体文件
+        处理文件
         
         参数:
-        - file_path: 输入文件路径
-        - output_format: 输出格式 ("LRC" 或 "SRT")
+        - file_path: 文件路径
+        - output_format: 输出格式
         - enable_translation: 是否启用翻译
         - enable_short_subtitles: 是否启用短字幕模式
+        - only_preprocess: 是否只执行预处理（9:16裁剪）
+        - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
         
         返回:
         - dict: 处理结果
         """
         try:
-            # 验证文件
-            is_valid, file_type, error_msg = validate_file(file_path)
-            if not is_valid:
-                return self._create_error_result(error_msg)
-            
             # 获取文件信息
             file_info = get_file_info(file_path)
-            LOG.info(f"🔍 开始处理 {file_type} 文件: {file_info['name']}")
+            LOG.info(f"🔍 开始处理 {file_info['type']} 文件: {file_info['name']}")
             
-            # 如果是视频文件，先进行9:16格式处理
+            # 记录原始路径
+            file_info['original_path'] = file_path
+            
+            # 视频预处理
             processed_video_path = None
-            if file_type == FileType.VIDEO:
+            if file_info['type'] == 'video' and not skip_preprocess:
+                # 进行9:16裁剪
                 processed_video_path = self._preprocess_video_to_9_16(file_path, file_info['name'])
-                if not processed_video_path:
-                    LOG.warning("⚠️ 视频9:16预处理失败，将使用原始视频继续处理")
-                else:
+                if processed_video_path:
                     LOG.info(f"✅ 视频已预处理为9:16格式: {processed_video_path}")
-                    # 更新文件信息中的路径，但保留原始路径作为参考
-                    file_info['original_path'] = file_info['path']
-                    file_info['path'] = processed_video_path
+                else:
+                    LOG.warning("⚠️ 9:16预处理失败，将使用原始视频继续")
             
-            # 确定音频文件路径
-            audio_path = self._prepare_audio_file(file_info['path'], file_type)
+            # 如果只需要预处理，那么在这里就返回结果
+            if only_preprocess:
+                # 保存到数据库
+                self._save_to_database(file_info, {}, {}, False, processed_video_path)
+                
+                return {
+                    'success': True,
+                    'file_type': file_info['type'],
+                    'processed_video_path': processed_video_path,
+                    'message': '视频预处理完成'
+                }
+            
+            # 如果跳过预处理，那么使用传入的文件作为已处理的视频
+            existing_series_id = None
+            if skip_preprocess:
+                processed_video_path = file_path
+                # 如果跳过预处理，需要从文件名获取原始系列信息
+                # 一般情况下，传入的file_path是9:16预处理后的视频路径
+                # 我们需要查找对应的系列
+                series_with_path = db_manager.find_series_by_new_file_path(processed_video_path)
+                if series_with_path:
+                    # 如果找到了对应的系列，更新file_info并记录系列ID
+                    existing_series_id = series_with_path['id']
+                    LOG.info(f"✅ 根据预处理视频路径找到系列: ID={existing_series_id}")
+                    file_info['name'] = series_with_path['name']
+                    file_info['original_path'] = series_with_path['file_path']
+                else:
+                    LOG.warning(f"⚠️ 未找到与路径匹配的系列: {processed_video_path}, 将创建新系列")
+            
+            # 准备用于ASR的音频文件
+            audio_path = self._prepare_audio_file(
+                processed_video_path if processed_video_path else file_path, 
+                file_info['type']
+            )
+            
             if not audio_path:
-                return self._create_error_result("音频准备失败")
+                self._cleanup_temp_files()
+                return self._create_error_result("无法提取或处理音频")
             
-            # 执行语音识别
+            # 进行语音识别
             LOG.info("🎤 开始语音识别...")
             recognition_result = asr(audio_path, task="transcribe", return_bilingual=enable_translation)
             
@@ -90,8 +127,8 @@ class MediaProcessor:
                 enable_short_subtitles
             )
             
-            # 保存到数据库
-            self._save_to_database(file_info, recognition_result, subtitle_result, enable_translation, processed_video_path)
+            # 保存到数据库 - 即使是skip_preprocess模式也要保存字幕
+            self._save_to_database(file_info, recognition_result, subtitle_result, enable_translation, processed_video_path, existing_series_id)
             
             # 清理临时文件
             self._cleanup_temp_files()
@@ -166,7 +203,7 @@ class MediaProcessor:
             LOG.error(f"❌ 视频9:16预处理出错: {str(e)}")
             return None
     
-    def _save_to_database(self, file_info, recognition_result, subtitle_result, is_bilingual, processed_video_path=None):
+    def _save_to_database(self, file_info, recognition_result, subtitle_result, is_bilingual, processed_video_path=None, existing_series_id=None):
         """
         保存处理结果到数据库
         
@@ -176,30 +213,36 @@ class MediaProcessor:
         - subtitle_result: 字幕生成结果
         - is_bilingual: 是否双语
         - processed_video_path: 预处理后的视频路径
+        - existing_series_id: 现有的系列ID (如果有)
         """
         try:
             LOG.info(f"🔄 开始保存到数据库: 文件={file_info.get('name', 'Unknown')}, 双语={is_bilingual}")
             
-            # 准备文件路径信息
-            original_path = file_info.get('original_path', file_info['path'])
-            
-            # 1. 创建媒体系列记录
-            series_id = db_manager.create_series(
-                name=file_info['name'],
-                file_path=original_path,  # 保存原始文件路径
-                file_type=file_info['type'],
-                duration=recognition_result.get('audio_duration')
-            )
-            LOG.info(f"📁 创建媒体系列成功: ID={series_id}")
-            
-            # 如果有预处理的9:16视频，更新系列信息
-            if processed_video_path:
-                db_manager.update_series_video_info(
-                    series_id,
-                    new_name=os.path.basename(processed_video_path),
-                    new_file_path=processed_video_path
+            # 如果提供了现有的系列ID，则直接使用
+            if existing_series_id:
+                series_id = existing_series_id
+                LOG.info(f"📁 使用现有系列ID: {series_id}")
+            else:
+                # 准备文件路径信息
+                original_path = file_info.get('original_path', file_info['path'])
+                
+                # 1. 创建媒体系列记录
+                series_id = db_manager.create_series(
+                    name=file_info['name'],
+                    file_path=original_path,  # 保存原始文件路径
+                    file_type=file_info['type'],
+                    duration=recognition_result.get('audio_duration')
                 )
-                LOG.info(f"🔄 更新系列的9:16预处理视频信息: {processed_video_path}")
+                LOG.info(f"📁 创建媒体系列成功: ID={series_id}")
+                
+                # 如果有预处理的9:16视频，更新系列信息
+                if processed_video_path:
+                    db_manager.update_series_video_info(
+                        series_id,
+                        new_name=os.path.basename(processed_video_path),
+                        new_file_path=processed_video_path
+                    )
+                    LOG.info(f"🔄 更新系列的9:16预处理视频信息: {processed_video_path}")
             
             # 2. 准备字幕数据
             subtitles_data = []
@@ -212,38 +255,114 @@ class MediaProcessor:
                 chinese_chunks = recognition_result.get('chinese_chunks', [])
                 LOG.info(f"🌐 双语模式: 英文chunks={len(english_chunks)}, 中文chunks={len(chinese_chunks)}")
                 
-                for i, chunk in enumerate(chunks):
+                # 检查chunks、english_chunks和chinese_chunks的长度
+                # 理论上应该一致，但实际可能有差异
+                chunks_len = len(chunks)
+                english_len = len(english_chunks)
+                chinese_len = len(chinese_chunks)
+                
+                # 使用最短的长度作为循环次数，避免索引越界
+                min_length = min(chunks_len, english_len, chinese_len)
+                LOG.info(f"🔄 使用最短长度进行处理: chunks={chunks_len}, english={english_len}, chinese={chinese_len}, min={min_length}")
+                
+                # 检查和修复chunks中的时间戳
+                valid_chunks = []
+                total_duration = recognition_result.get('audio_duration', 0)
+                
+                for i in range(min_length):
+                    chunk = chunks[i] if i < chunks_len else {'timestamp': [0, 0], 'text': ''}
                     timestamp = chunk.get('timestamp', [0, 0])
-                    english_text = english_chunks[i].get('text', '') if i < len(english_chunks) else ''
-                    chinese_text = chinese_chunks[i].get('text', '') if i < len(chinese_chunks) else ''
+                    # 确保timestamp是一个至少有两个元素的列表
+                    if not isinstance(timestamp, list) or len(timestamp) < 2:
+                        timestamp = [0, 0]
+                    
+                    # 确保结束时间不为NULL且有效
+                    if timestamp[1] is None or timestamp[1] <= timestamp[0]:
+                        # 如果这是最后一个chunk，使用总时长作为结束时间
+                        if i == min_length - 1 and total_duration > 0:
+                            timestamp[1] = total_duration
+                        # 否则，使用开始时间加上10秒或下一个开始时间作为结束时间
+                        else:
+                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < chunks_len else 0
+                            if next_start and next_start > timestamp[0]:
+                                timestamp[1] = next_start
+                            else:
+                                timestamp[1] = timestamp[0] + 10
+                    
+                    # 获取对应的文本
+                    english_text = english_chunks[i].get('text', '') if i < english_len else ''
+                    chinese_text = chinese_chunks[i].get('text', '') if i < chinese_len else ''
+                    
+                    # 最后再次确保timestamp有效
+                    begin_time = max(0, timestamp[0])
+                    end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
                     
                     subtitles_data.append({
-                        'begin_time': timestamp[0],
-                        'end_time': timestamp[1],
+                        'begin_time': begin_time,
+                        'end_time': end_time,
                         'english_text': english_text,
                         'chinese_text': chinese_text
                     })
             else:
                 # 单语模式
                 LOG.info("📝 单语模式处理")
-                for chunk in chunks:
+                
+                # 检查和修复chunks中的时间戳
+                valid_chunks = []
+                total_duration = recognition_result.get('audio_duration', 0)
+                
+                for i, chunk in enumerate(chunks):
                     timestamp = chunk.get('timestamp', [0, 0])
+                    # 确保timestamp是一个至少有两个元素的列表
+                    if not isinstance(timestamp, list) or len(timestamp) < 2:
+                        timestamp = [0, 0]
+                    
+                    # 确保结束时间不为NULL且有效
+                    if timestamp[1] is None or timestamp[1] <= timestamp[0]:
+                        # 如果这是最后一个chunk，使用总时长作为结束时间
+                        if i == len(chunks) - 1 and total_duration > 0:
+                            timestamp[1] = total_duration
+                        # 否则，使用开始时间加上10秒作为结束时间
+                        else:
+                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < len(chunks) else 0
+                            if next_start and next_start > timestamp[0]:
+                                timestamp[1] = next_start
+                            else:
+                                timestamp[1] = timestamp[0] + 10
+                    
+                    valid_chunks.append({
+                        'text': chunk.get('text', ''),
+                        'timestamp': timestamp
+                    })
+                
+                # 使用修复后的chunks
+                for chunk in valid_chunks:
                     text = chunk.get('text', '')
+                    timestamp = chunk.get('timestamp', [0, 0])
+                    
+                    # 最后再次确保timestamp有效
+                    begin_time = max(0, timestamp[0])
+                    end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
                     
                     subtitles_data.append({
-                        'begin_time': timestamp[0],
-                        'end_time': timestamp[1],
+                        'begin_time': begin_time,
+                        'end_time': end_time,
                         'english_text': text,
                         'chinese_text': ''
                     })
             
-            # 3. 批量创建字幕记录
+            # 3. 首先删除现有的所有字幕
+            if series_id:
+                LOG.info(f"🗑️ 删除系列ID={series_id}的现有字幕")
+                db_manager.delete_subtitles_by_series_id(series_id)
+            
+            # 4. 批量创建字幕记录
             if subtitles_data:
                 LOG.info(f"💾 准备保存 {len(subtitles_data)} 条字幕到数据库")
                 subtitle_ids = db_manager.create_subtitles(series_id, subtitles_data)
                 LOG.info(f"✅ 数据库保存成功: 系列ID {series_id}, {len(subtitle_ids)} 条字幕")
                 
-                # 4. 提取并保存重点单词（可选功能，暂时留空，后续实现）
+                # 5. 提取并保存重点单词（可选功能，暂时留空，后续实现）
                 # self._extract_and_save_keywords(subtitle_ids, subtitles_data)
             else:
                 LOG.warning("⚠️ 没有字幕数据需要保存")
@@ -317,7 +436,7 @@ class MediaProcessor:
                 
                 if is_bilingual:
                     # 双语模式：使用对齐后的chunks
-                    from openai_whisper import align_bilingual_chunks
+                    from src.openai_whisper import align_bilingual_chunks
                     english_chunks = recognition_result.get("english_chunks", [])
                     chinese_chunks = recognition_result.get("chinese_chunks", [])
                     aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
@@ -441,7 +560,7 @@ class MediaProcessor:
         返回:
         - dict: 格式信息
         """
-        from file_detector import get_supported_formats, format_supported_formats_text
+        from src.file_detector import get_supported_formats, format_supported_formats_text
         
         formats = get_supported_formats()
         
@@ -457,20 +576,31 @@ class MediaProcessor:
 # 全局处理器实例
 media_processor = MediaProcessor()
 
-def process_media_file(file_path, output_format="SRT", enable_translation=False, enable_short_subtitles=False):
+def process_media_file(file_path, output_format="SRT", enable_translation=False, 
+                     enable_short_subtitles=False, only_preprocess=False, skip_preprocess=False):
     """
-    处理多媒体文件的便捷函数
+    外部调用接口：处理媒体文件
     
     参数:
     - file_path: 文件路径
-    - output_format: 输出格式
+    - output_format: 输出格式 ("LRC" 或 "SRT")
     - enable_translation: 是否启用翻译
     - enable_short_subtitles: 是否启用短字幕模式
+    - only_preprocess: 是否只执行预处理（9:16裁剪）
+    - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
     
     返回:
     - dict: 处理结果
     """
-    return media_processor.process_file(file_path, output_format, enable_translation, enable_short_subtitles)
+    # 使用全局实例而不是每次创建新实例
+    return media_processor.process_file(
+        file_path=file_path, 
+        output_format=output_format, 
+        enable_translation=enable_translation,
+        enable_short_subtitles=enable_short_subtitles,
+        only_preprocess=only_preprocess,
+        skip_preprocess=skip_preprocess
+    )
 
 def get_media_formats_info():
     """获取媒体格式信息"""

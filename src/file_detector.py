@@ -5,6 +5,10 @@
 """
 
 import os
+import sys
+# 添加当前目录到系统路径，以支持模块导入
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from pathlib import Path
 from logger import LOG
 
