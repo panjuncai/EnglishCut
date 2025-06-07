@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""
-视频预处理模块
-添加顶部标题和底部文字区域，不占据原视频空间
-"""
+# -*- coding: utf-8 -*-
 
 import os
+import json
 import subprocess
+from pathlib import Path
 import logging
 
 # 配置日志
@@ -109,6 +108,28 @@ class VideoProcessor:
         返回:
         - str: FFmpeg滤镜字符串
         """
+        # 指定字体路径，优先使用抖音字体，找不到再使用苹方
+        douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
+        # 备选字体
+        system_fonts = [
+            '/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc',  # 苹方
+            '/System/Library/Fonts/STHeiti Light.ttc',  # 黑体-简 细体
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',  # 冬青黑体
+            'Arial.ttf'  # 默认Arial
+        ]
+        
+        # 检查抖音字体是否存在
+        if not os.path.exists(douyin_font):
+            print(f"警告: 抖音字体文件不存在: {douyin_font}")
+            # 找到第一个存在的系统字体
+            for font in system_fonts:
+                if os.path.exists(font):
+                    print(f"使用备选字体: {font}")
+                    douyin_font = font
+                    break
+        else:
+            print(f"找到抖音字体: {douyin_font}")
+        
         # 视频滤镜：直接从原视频中挖出9:16比例的部分，不变形，然后添加顶部和底部区域
         # 顶部占10%，主视频占60%，底部占30%
         filter_chain = [
@@ -122,10 +143,11 @@ class VideoProcessor:
             "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
             
             # 第4步：添加顶部文字（调大白色字体，使用粗体字体文件）
-            f"drawtext=text='{top_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=64-text_h/2:fontfile=Microsoft YaHei:shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",  # 使用Heavy字重代替Medium字重
+            f"drawtext=text='{top_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
             
-            # 第5步：添加底部文字（黄色字体带黑色描边，无背景）
-            f"drawtext=text='{bottom_text}':fontcolor=yellow:fontsize=36:x=(w-text_w)/2:y=920-text_h/2:fontfile=Microsoft YaHei:bordercolor=black:borderw=2",  # 黄色字体带黑色描边
+            # 第5步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
+            # 使用更亮的黄色(#FFFF00)，增加描边宽度，使用粗体效果
+            f"drawtext=text='{bottom_text}':fontcolor=#FFFF00:fontsize=36:x=(w-text_w)/2:y=920-text_h/2:fontfile='{douyin_font}':bordercolor=black:borderw=4:box=0",
         ]
         
         return ','.join(filter_chain)
