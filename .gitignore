@@ -171,3 +171,4 @@ jupyter/*.pptx
 nohup.out
 
 *.csv
+*.mp4
