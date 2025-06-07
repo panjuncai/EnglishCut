@@ -515,11 +515,12 @@ def create_database_interface():
 - **重点单词**: {preview['total_keywords']} 个
 - **烧制时长**: {preview['total_duration']} 秒
 - **预估文件**: {preview['estimated_file_size']}
+- **标题**: {preview.get('title', '第二遍：重点词汇消化')}
 
 ### 📈 词频分布
+- **500-5000**: {preview['coca_distribution'].get('500-5000', 0)} 个
 - **5000-10000**: {preview['coca_distribution'].get('5000-10000', 0)} 个
-- **10000-20000**: {preview['coca_distribution'].get('10000-20000', 0)} 个
-- **20000以上**: {preview['coca_distribution'].get('20000+', 0)} 个
+- **10000以上**: {preview['coca_distribution'].get('10000+', 0)} 个
 
 ### 🔤 示例单词
 """
@@ -554,10 +555,12 @@ def create_database_interface():
                 # 开始烧制
                 yield "🎬 开始烧制...", ""
                 
+                # 执行烧制
                 output_video = video_burner.process_series_video(
                     int(series_id),
                     output_dir,
-                    progress_callback
+                    title_text="第二遍：重点词汇消化",
+                    progress_callback=progress_callback
                 )
                 
                 if output_video:

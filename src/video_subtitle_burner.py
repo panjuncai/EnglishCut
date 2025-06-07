@@ -51,7 +51,7 @@ class VideoSubtitleBurner:
                 eligible_keywords = []
                 for keyword in keywords:
                     coca_rank = keyword.get('coca')
-                    if coca_rank and coca_rank > 5000:  # 低频重点词汇
+                    if coca_rank and coca_rank > 500:  # 低频重点词汇
                         eligible_keywords.append(keyword)
                 
                 if not eligible_keywords:
@@ -110,91 +110,6 @@ class VideoSubtitleBurner:
         
         return selected
     
-    def create_subtitle_file(self, burn_data: List[Dict], subtitle_path: str) -> Tuple[str, str]:
-        """
-        创建烧制用的SRT字幕文件
-        创建两个字幕文件：一个用于原视频区域的中英文字幕，一个用于底部区域的重点单词
-        
-        参数:
-        - burn_data: 烧制数据
-        - subtitle_path: 字幕文件保存路径
-        
-        返回:
-        - Tuple[str, str]: (原文字幕文件路径, 重点单词字幕文件路径)
-        """
-        try:
-            # 两个SRT文件路径
-            orig_subtitle_path = subtitle_path.replace('.ass', '_original.srt')
-            keyword_subtitle_path = subtitle_path.replace('.ass', '_keywords.srt')
-            
-            # 原文字幕内容
-            orig_subtitle_content = []
-            # 重点单词字幕内容
-            keyword_subtitle_content = []
-            
-            for i, item in enumerate(burn_data, 1):
-                start_time = self._seconds_to_srt_time(item['begin_time'])
-                end_time = self._seconds_to_srt_time(item['end_time'])
-                
-                keyword = item['keyword']
-                phonetic = item['phonetic'].strip('/')
-                explanation = item['explanation']
-                
-                # 获取原始英文字幕
-                subtitle_id = item['subtitle_id']
-                subtitle_info = db_manager.get_subtitle_by_id(subtitle_id)
-                
-                # 构建原文字幕内容（英文+中文）
-                orig_lines = []
-                if subtitle_info:
-                    if 'english_text' in subtitle_info and subtitle_info['english_text']:
-                        orig_lines.append(subtitle_info['english_text'])
-                    if 'chinese_text' in subtitle_info and subtitle_info['chinese_text']:
-                        orig_lines.append(subtitle_info['chinese_text'])
-                
-                # 构建重点单词字幕内容
-                keyword_lines = []
-                # 单词 + 音标格式
-                highlight_line = ""
-                if phonetic:
-                    highlight_line = f"{keyword} [{phonetic}]"
-                else:
-                    highlight_line = keyword
-                
-                keyword_lines.append(highlight_line)
-                
-                # 解释行（词性 + 中文解释）
-                if explanation:
-                    keyword_lines.append(f"adj. {explanation}")
-                
-                # 添加到各自的字幕内容
-                if orig_lines:
-                    orig_subtitle_content.append(f"{i}")
-                    orig_subtitle_content.append(f"{start_time} --> {end_time}")
-                    orig_subtitle_content.append('\n'.join(orig_lines))
-                    orig_subtitle_content.append("")  # 空行分隔
-                
-                if keyword_lines:
-                    keyword_subtitle_content.append(f"{i}")
-                    keyword_subtitle_content.append(f"{start_time} --> {end_time}")
-                    keyword_subtitle_content.append('\n'.join(keyword_lines))
-                    keyword_subtitle_content.append("")  # 空行分隔
-            
-            # 写入原文字幕文件
-            with open(orig_subtitle_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(orig_subtitle_content))
-            
-            # 写入重点单词字幕文件
-            with open(keyword_subtitle_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(keyword_subtitle_content))
-            
-            LOG.info(f"📝 创建字幕文件: {orig_subtitle_path} 和 {keyword_subtitle_path}")
-            return orig_subtitle_path, keyword_subtitle_path
-            
-        except Exception as e:
-            LOG.error(f"创建字幕文件失败: {e}")
-            raise
-    
     def _seconds_to_ass_time(self, seconds: float) -> str:
         """
         将秒数转换为ASS时间格式
@@ -229,6 +144,223 @@ class VideoSubtitleBurner:
         
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
     
+    def _build_video_filter(self, top_text: str, bottom_text: str, keyword_text: Dict = None) -> str:
+        """
+        构建FFmpeg视频滤镜，使用与pre_process.py相同的视频滤镜逻辑
+        
+        参数:
+        - top_text: 顶部文字
+        - bottom_text: 底部文字
+        - keyword_text: 重点单词信息，格式为 {"word": "text", "phonetic": "音标", "meaning": "释义"}
+        
+        返回:
+        - str: FFmpeg滤镜字符串
+        """
+        # 指定字体路径，优先使用抖音字体，找不到再使用苹方
+        douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
+        # 备选字体
+        system_fonts = [
+            '/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc',  # 苹方
+            '/System/Library/Fonts/STHeiti Light.ttc',  # 黑体-简 细体
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',  # 冬青黑体
+            'Arial.ttf'  # 默认Arial
+        ]
+        
+        # 检查抖音字体是否存在
+        if not os.path.exists(douyin_font):
+            LOG.warning(f"警告: 抖音字体文件不存在: {douyin_font}")
+            # 找到第一个存在的系统字体
+            for font in system_fonts:
+                if os.path.exists(font):
+                    LOG.info(f"使用备选字体: {font}")
+                    douyin_font = font
+                    break
+        else:
+            LOG.info(f"找到抖音字体: {douyin_font}")
+        
+        # 视频滤镜：从原视频中挖出9:16比例的部分，不变形，然后添加顶部和底部区域
+        # 顶部占10%，主视频占60%，底部占适合4行字幕的高度
+        filter_chain = [
+            # 第1步：从原16:9视频中央挖出9:16比例的部分，忽略底部1/5的广告字幕
+            # 原视频高度的4/5作为有效高度，在此基础上挖取9:16比例
+            "crop=ih*4/5*9/16:ih*4/5:iw/2-ih*4/5*9/16/2:0",  # 从中心裁剪9:16比例，避开底部1/5区域
+            
+            # 第2步：缩放到标准尺寸
+            "scale=720:1280",  # 缩放到标准的9:16尺寸
+            
+            # 第3步：顶部区域 - 创建完全不透明的黑色背景
+            "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
+            
+            # 第4步：底部区域 - 创建单一浅米色背景
+            # 底部区域从1080像素开始，高度为200像素（适合4行字幕）
+            "drawbox=x=0:y=1080:w=720:h=200:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
+            
+            # 第5步：添加顶部文字（调大白色字体，使用粗体字体文件）
+            f"drawtext=text='{top_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
+        ]
+        
+        # 第6步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
+        # 将底部文字分行并居中处理
+        if bottom_text:
+            # 分割英文和中文部分（如果有换行符）
+            text_lines = bottom_text.split('\n')
+            
+            # 英文文本处理
+            if len(text_lines) >= 1 and text_lines[0]:
+                english_text = text_lines[0]
+                
+                # 判断英文是否过长需要分行（超过30个字符就分行）
+                eng_fontsize = 36
+                if len(english_text) > 30:
+                    # 找到适合分行的位置（句子中间的空格）
+                    words = english_text.split(' ')
+                    total_words = len(words)
+                    half_point = total_words // 2
+                    
+                    # 找到接近中点的空格位置
+                    eng_first_line = ' '.join(words[:half_point])
+                    eng_second_line = ' '.join(words[half_point:])
+                    
+                    # 添加英文第一行
+                    filter_chain.append(
+                        f"drawtext=text='{eng_first_line}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1100-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+                    
+                    # 添加英文第二行
+                    filter_chain.append(
+                        f"drawtext=text='{eng_second_line}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1140-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+                else:
+                    # 英文行 - 位置在底部区域的上半部分
+                    filter_chain.append(
+                        f"drawtext=text='{english_text}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1120-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+            
+            # 中文文本处理
+            if len(text_lines) >= 2 and text_lines[1]:
+                chinese_text = text_lines[1]
+                
+                # 判断中文是否过长需要分行（超过15个汉字就分行）
+                cn_fontsize = 32
+                if len(chinese_text) > 15:
+                    # 尽量在中间位置分行
+                    half_point = len(chinese_text) // 2
+                    
+                    # 寻找接近中点的标点符号或空格
+                    cn_split_point = half_point
+                    for i in range(half_point-3, half_point+3):
+                        if 0 <= i < len(chinese_text) and (chinese_text[i] in '，。！？,. ' or chinese_text[i].isspace()):
+                            cn_split_point = i + 1
+                            break
+                    
+                    cn_first_line = chinese_text[:cn_split_point]
+                    cn_second_line = chinese_text[cn_split_point:]
+                    
+                    # 添加中文第一行
+                    filter_chain.append(
+                        f"drawtext=text='{cn_first_line}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=3:box=0"
+                    )
+                    
+                    # 添加中文第二行
+                    filter_chain.append(
+                        f"drawtext=text='{cn_second_line}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"x=(w-text_w)/2:y=1220-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=3:box=0"
+                    )
+                else:
+                    # 中文行 - 位置在底部区域的下半部分
+                    filter_chain.append(
+                        f"drawtext=text='{chinese_text}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"x=(w-text_w)/2:y=1200-text_h/2:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=3:box=0"
+                    )
+            
+            # 如果只有一行文本，居中显示
+            if len(text_lines) == 1 and not (len(text_lines[0]) > 30):
+                filter_chain.append(
+                    f"drawtext=text='{text_lines[0]}':fontcolor=#FFFF00:fontsize=36:"
+                    f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
+                    f"bordercolor=black:borderw=4:box=0"
+                )
+        
+        # 第7步：如果提供了重点单词信息，添加单词展示区域
+        if keyword_text and isinstance(keyword_text, dict):
+            # 获取单词信息
+            word = keyword_text.get('word', '')
+            phonetic = keyword_text.get('phonetic', '')
+            meaning = keyword_text.get('meaning', '')
+            
+            if word:
+                # 字体大小设置
+                word_fontsize = 128     # 英文单词字体大小 - 英文大字
+                meaning_fontsize = 48   # 中文释义字体大小 - 中文中字
+                phonetic_fontsize = 26  # 音标字体大小 - 音标小字
+                
+                # 计算文本垂直位置和行间距
+                base_y = 830  # 矩形框顶部Y坐标，从900调整到830，往上移
+                line_height_1 = 110  # 第一行(英文大字)到第二行(中文小字)的行高
+                line_height_2 = 60   # 第二行(中文小字)到第三行(音标小字)的行高
+                padding_y = 30  # 垂直内边距
+                
+                # 计算三行文本的垂直位置
+                word_y = base_y + padding_y
+                meaning_y = word_y + line_height_1
+                phonetic_y = meaning_y + line_height_2
+                
+                # 根据单词长度调整宽度
+                # 更精确地估算字符宽度（考虑更新的字体大小）
+                word_width = len(word) * 48      # 128px字体下英文字符约48像素
+                meaning_width = len(meaning) * 36 if meaning else 0   # 64px字体下中文字符约36像素
+                phonetic_width = len(phonetic) * 10 if phonetic else 0  # 26px字体下音标字符约10像素
+                
+                # 取最宽的文本长度
+                max_text_len = max(word_width, meaning_width, phonetic_width)
+                
+                # 计算宽度，使用更小的内边距
+                padding_x = 40  # 左右各20像素的内边距
+                rect_width = max(250, min(max_text_len + padding_x, 700))
+                center_x = 360  # 屏幕中心水平坐标
+                rect_x = center_x - rect_width/2
+                
+                # 计算矩形高度，考虑不同行高
+                if meaning and phonetic:
+                    # 全部三行
+                    rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 10
+                elif meaning:
+                    # 两行：单词+中文
+                    rect_height = padding_y + line_height_1 + padding_y
+                elif phonetic:
+                    # 两行：单词+音标
+                    rect_height = padding_y + line_height_1 + padding_y
+                else:
+                    # 只有单词一行
+                    rect_height = padding_y + 90 + padding_y  # 单词行高设为90
+                
+                # 添加亮黄色背景框 - 使用亮黄色 #FFFF00
+                filter_chain.append(f"drawbox=x={rect_x}:y={base_y}:w={rect_width}:h={rect_height}:color=#FFFF00@1.0:t=fill")
+                
+                # 在背景框上添加文本
+                # 添加单词文本（英文单词）
+                filter_chain.append(f"drawtext=text='{word}':fontcolor=black:fontsize={word_fontsize}:x={center_x}-text_w/2:y={word_y}:fontfile='{douyin_font}'")
+                
+                # 如果有中文释义，添加释义文本
+                if meaning:
+                    filter_chain.append(f"drawtext=text='{meaning}':fontcolor=black:fontsize={meaning_fontsize}:x={center_x}-text_w/2:y={meaning_y}:fontfile='{douyin_font}'")
+                
+                # 如果有音标，添加音标文本
+                if phonetic:
+                    filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=black:fontsize={phonetic_fontsize}:x={center_x}-text_w/2:y={phonetic_y}:fontfile='{douyin_font}'")
+        
+        return ','.join(filter_chain)
+    
     def burn_video_with_keywords(self, 
                                 input_video: str, 
                                 output_video: str, 
@@ -236,7 +368,7 @@ class VideoSubtitleBurner:
                                 title_text: str = "第二遍: 词汇与文法分析",
                                 progress_callback=None) -> bool:
         """
-        烧制视频，添加重点单词字幕
+        烧制视频，添加重点单词字幕，使用pre_process.py的方法
         
         参数:
         - input_video: 输入视频路径
@@ -254,47 +386,120 @@ class VideoSubtitleBurner:
             if progress_callback:
                 progress_callback("🎬 开始视频烧制处理...")
             
-            # 创建临时SRT字幕文件
-            subtitle_path = os.path.join(self.temp_dir, "keywords.srt")
-            orig_subtitle_path, keyword_subtitle_path = self.create_subtitle_file(burn_data, subtitle_path)
+            # 获取原始字幕内容作为底部文字
+            # 处理每个时间段的烧制
+            for i, item in enumerate(burn_data):
+                if progress_callback and i % 5 == 0:  # 每处理5个关键词更新一次进度
+                    progress_callback(f"🔄 正在处理关键词 {i+1}/{len(burn_data)}: {item['keyword']}")
+                
+                # 获取原始字幕文本
+                subtitle_id = item['subtitle_id']
+                subtitle_info = db_manager.get_subtitle_by_id(subtitle_id)
+                
+                if not subtitle_info:
+                    continue
+                
+                # 构建底部字幕文本（英文+中文）
+                bottom_text = ""
+                if 'english_text' in subtitle_info and subtitle_info['english_text']:
+                    bottom_text = subtitle_info['english_text']
+                if 'chinese_text' in subtitle_info and subtitle_info['chinese_text']:
+                    if bottom_text:
+                        bottom_text += "\n"
+                    bottom_text += subtitle_info['chinese_text']
+                
+                # 提取时间段
+                start_time = item['begin_time']
+                end_time = item['end_time']
+                
+                # 构建关键词信息
+                keyword_info = {
+                    'word': item['keyword'],
+                    'phonetic': item['phonetic'],
+                    'meaning': item['explanation']
+                }
+                
+                # 为当前时间段创建临时输出文件
+                temp_output = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                
+                # 裁剪当前时间段的视频
+                segment_cmd = [
+                    'ffmpeg', '-y',
+                    '-i', input_video,
+                    '-ss', str(start_time),
+                    '-to', str(end_time),
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-vsync', '2',  # 保持视频同步
+                    self.temp_dir + f"/temp_segment_{i}.mp4"
+                ]
+                
+                # 执行裁剪命令
+                proc = subprocess.Popen(
+                    segment_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                proc.communicate()
+                
+                # 为当前片段应用视频滤镜
+                video_filter = self._build_video_filter(title_text, bottom_text, keyword_info)
+                
+                process_cmd = [
+                    'ffmpeg', '-y',
+                    '-i', self.temp_dir + f"/temp_segment_{i}.mp4",
+                    '-vf', video_filter,
+                    '-aspect', '9:16',  # 设置宽高比为9:16
+                    '-c:a', 'copy',  # 音频直接复制
+                    '-preset', 'medium',
+                    '-crf', '23',
+                    temp_output
+                ]
+                
+                # 执行处理命令
+                proc = subprocess.Popen(
+                    process_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                proc.communicate()
             
-            if progress_callback:
-                progress_callback("📝 字幕文件创建完成，开始视频处理...")
+            # 创建包含所有处理过的片段的文件列表
+            segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+            with open(segments_list_path, 'w') as f:
+                for i in range(len(burn_data)):
+                    f.write(f"file '{self.temp_dir}/segment_{i}.mp4'\n")
             
-            # FFmpeg命令：裁剪到竖屏 + 烧制字幕
-            cmd = [
-                'ffmpeg', '-y',  # 覆盖输出文件
-                '-i', input_video,  # 输入视频
-                '-vf', self._build_video_filter(orig_subtitle_path, keyword_subtitle_path, title_text),  # 视频滤镜
-                '-aspect', '3:4',  # 设置宽高比为3:4 (竖屏)
-                '-c:a', 'copy',  # 音频直接复制
-                '-preset', 'medium',  # 编码预设
-                '-crf', '23',  # 质量控制
+            # 使用concat过滤器合并所有片段
+            concat_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', segments_list_path,
+                '-c', 'copy',
                 output_video
             ]
             
             if progress_callback:
-                progress_callback(f"🔄 执行FFmpeg命令...")
+                progress_callback("🔄 合并所有视频片段...")
             
-            LOG.info(f"🎬 执行FFmpeg命令: {' '.join(cmd)}")
-            
-            # 执行FFmpeg
-            process = subprocess.Popen(
-                cmd,
+            # 执行合并命令
+            proc = subprocess.Popen(
+                concat_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True
             )
+            stdout, stderr = proc.communicate()
             
-            stdout, stderr = process.communicate()
-            
-            if process.returncode == 0:
+            if proc.returncode == 0:
                 if progress_callback:
                     progress_callback("✅ 视频烧制完成！")
                 LOG.info(f"✅ 视频烧制成功: {output_video}")
                 return True
             else:
-                error_msg = f"FFmpeg错误: {stderr}"
+                error_msg = f"合并视频失败: {stderr}"
                 if progress_callback:
                     progress_callback(f"❌ 烧制失败: {error_msg}")
                 LOG.error(error_msg)
@@ -309,61 +514,19 @@ class VideoSubtitleBurner:
         finally:
             # 清理临时文件
             try:
-                if os.path.exists(orig_subtitle_path):
-                    os.remove(orig_subtitle_path)
-                if os.path.exists(keyword_subtitle_path):
-                    os.remove(keyword_subtitle_path)
+                # 保留临时目录，但清理里面的文件，以便下次使用
+                for file in os.listdir(self.temp_dir):
+                    try:
+                        os.remove(os.path.join(self.temp_dir, file))
+                    except:
+                        pass
             except:
                 pass
-    
-    def _build_video_filter(self, orig_subtitle_path: str, keyword_subtitle_path: str, title_text: str = "第二遍: 词汇与文法分析") -> str:
-        """
-        构建FFmpeg视频滤镜
-        
-        参数:
-        - orig_subtitle_path: 原文字幕文件路径
-        - keyword_subtitle_path: 重点单词字幕文件路径
-        - title_text: 顶部标题栏文字
-        
-        返回:
-        - str: FFmpeg滤镜字符串
-        """
-        # 转义路径中的特殊字符
-        escaped_orig_path = orig_subtitle_path.replace('\\', '\\\\').replace(':', '\\:').replace('\'', '\\\'')
-        escaped_keyword_path = keyword_subtitle_path.replace('\\', '\\\\').replace(':', '\\:').replace('\'', '\\\'')
-        
-        # 视频滤镜：使用多步处理
-        # 1. 裁剪原视频到竖屏
-        # 2. 添加顶部标题区域和底部词汇区域，使视频整体成为3:4比例
-        # 3. 在新创建的区域上添加文字
-        
-        filter_chain = [
-            # 第1步：裁剪原视频（从中间裁剪到接近正方形）
-            "scale=-1:ih",  # 保持高度不变，调整宽度
-            "crop=ih*0.9:ih:(iw-ow)/2:0",  # 从中间裁剪接近正方形区域
-            
-            # 第2步：在上下添加空白区域，形成3:4比例
-            "pad=iw:ih*1.3:0:ih*0.15:lightblue",  # 顶部添加15%高度的浅蓝色区域，底部会自动填充
-            
-            # 第3步：在底部添加黄色区域
-            "drawbox=x=0:y=ih*0.85:w=iw:h=ih*0.3:color=yellow@1:t=fill",  # 底部30%区域填充黄色
-            
-            # 第4步：添加顶部标题文字
-            f"drawtext=text='{title_text}':fontcolor=blue:fontsize=30:x=(w-text_w)/2:y=(h*0.15-text_h)/2:fontfile=/System/Library/Fonts/STHeiti Medium.ttc",
-            
-            # 第5步：烧制原视频中英文字幕（较小字体）
-            f"subtitles='{escaped_orig_path}':force_style='Fontname=Microsoft YaHei,Fontsize=16,PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=4,Outline=1,Shadow=1,Alignment=2,MarginV=5,MarginL=30,MarginR=30,Bold=0,Spacing=1'",
-            
-            # 第6步：烧制底部区域的重点单词（较大字体，应用偏移确保显示在黄色区域）
-            f"subtitles='{escaped_keyword_path}':force_style='Fontname=Microsoft YaHei,Fontsize=30,PrimaryColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=0,Alignment=2,MarginV=250,MarginL=30,MarginR=30,Bold=1,Spacing=1'"
-        ]
-        
-        return ','.join(filter_chain)
     
     def process_series_video(self, 
                             series_id: int, 
                             output_dir: str = "output",
-                            title_text: str = "第二遍: 词汇与文法分析",
+                            title_text: str = "第二遍：重点词汇消化",
                             progress_callback=None) -> Optional[str]:
         """
         处理整个系列的视频烧制
@@ -491,7 +654,8 @@ class VideoSubtitleBurner:
                 'total_duration': round(total_duration, 2),
                 'coca_distribution': coca_ranges,
                 'sample_keywords': sample_keywords,
-                'estimated_file_size': f"{total_keywords * 0.5:.1f} MB"  # 估算
+                'estimated_file_size': f"{total_keywords * 0.5:.1f} MB",  # 估算
+                'title': "第二遍：重点词汇消化"
             }
             
         except Exception as e:
@@ -501,7 +665,8 @@ class VideoSubtitleBurner:
                 'total_duration': 0,
                 'coca_distribution': {},
                 'sample_keywords': [],
-                'estimated_file_size': '0 MB'
+                'estimated_file_size': '0 MB',
+                'title': "第二遍：重点词汇消化"
             }
     
     def cleanup(self):
