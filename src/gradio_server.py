@@ -296,15 +296,6 @@ def create_main_interface():
                         
                         with gr.Row():
                             # 提取选项
-                            extract_count = gr.Slider(
-                                minimum=3,
-                                maximum=15,
-                                value=5,
-                                step=1,
-                                label="📊 每个字幕提取词数",
-                                info="建议每个字幕段落提取3-15个单词"
-                            )
-                            
                             coca_checkbox = gr.Checkbox(
                                 label="📚 自动更新COCA频率",
                                 value=True,
@@ -630,7 +621,7 @@ def create_main_interface():
                     f"## ℹ️ 系统状态\n字幕上传失败: {str(e)}"
                 )
         
-        def extract_keywords(video_selection, extract_count, update_coca):
+        def extract_keywords(video_selection, update_coca):
             """从字幕中提取关键词"""
             LOG.info(f"提取关键词 - 选择的视频: {video_selection}, 类型: {type(video_selection)}")
             
@@ -712,20 +703,95 @@ def create_main_interface():
                         gr.update(visible=False)
                     )
                 
-                # TODO: 实现关键词提取逻辑
-                # 这里需要调用实际的关键词提取函数
-                # 暂时返回模拟结果
-                
-                return (
-                    f"""### ✅ 关键词提取完成
+                # 使用KeywordExtractor提取关键词
+                try:
+                    # 导入关键词提取模块
+                    LOG.info("开始导入关键词提取模块...")
+                    from keyword_extractor import keyword_extractor
+                    LOG.info("导入关键词提取模块成功")
+                    
+                    # 开始处理
+                    LOG.info(f"开始提取关键词，系列ID: {video_id}，字幕数量: {len(subtitles)}")
+                    
+                    # 首先检查是否有现有的关键词，如果有则删除
+                    existing_keywords = db_manager.get_keywords(series_id=video_id)
+                    if existing_keywords:
+                        LOG.info(f"发现 {len(existing_keywords)} 个现有关键词，将删除并重新提取")
+                        db_manager.delete_keywords_by_series_id(video_id)
+                    
+                    # 使用batch_extract_with_context可以更有效地提取关键词
+                    extracted_keywords = keyword_extractor.batch_extract_with_context(subtitles, batch_size=3)
+                    
+                    # 如果没有提取到关键词
+                    if not extracted_keywords:
+                        LOG.warning("没有提取到关键词")
+                        return (
+                            "### ⚠️ 没有提取到关键词",
+                            "## ℹ️ 系统状态\n提取关键词过程完成，但没有找到关键词",
+                            gr.update(visible=False)
+                        )
+                    
+                    LOG.info(f"提取到 {len(extracted_keywords)} 个关键词")
+                    
+                    # 保存关键词到数据库
+                    # 将每个关键词按照subtitle_id分组
+                    keywords_by_subtitle = {}
+                    for kw in extracted_keywords:
+                        subtitle_id = kw.get('subtitle_id')
+                        if subtitle_id not in keywords_by_subtitle:
+                            keywords_by_subtitle[subtitle_id] = []
+                        keywords_by_subtitle[subtitle_id].append(kw)
+                    
+                    # 按照subtitle_id分批保存
+                    saved_count = 0
+                    for subtitle_id, keywords in keywords_by_subtitle.items():
+                        if keywords:
+                            keyword_ids = db_manager.create_keywords(subtitle_id, keywords)
+                            saved_count += len(keyword_ids)
+                    
+                    LOG.info(f"成功保存 {saved_count} 个关键词到数据库")
+                    
+                    # 准备表格数据
+                    table_data = []
+                    for kw in extracted_keywords:
+                        table_data.append([
+                            kw.get('id', 0),
+                            kw.get('key_word', ''),
+                            kw.get('phonetic_symbol', ''),
+                            kw.get('explain_text', ''),
+                            kw.get('coca', 0),
+                            kw.get('subtitle_id', 0)
+                        ])
+                    
+                    # 更新表格
+                    return (
+                        f"""### ✅ 关键词提取完成
 - **视频**: {series['name']}
 - **字幕数**: {len(subtitles)}
-- **提取单词数**: {len(subtitles) * extract_count} (预估)
+- **提取单词数**: {len(extracted_keywords)}
+- **成功保存**: {saved_count}
 - **COCA更新**: {'已更新' if update_coca else '未更新'}
-                    """,
-                    "## ℹ️ 系统状态\n关键词提取完成，可以进行下一步",
-                    gr.update(visible=True)  # 显示关键词表格
-                )
+                        """,
+                        "## ℹ️ 系统状态\n关键词提取完成，可以进行下一步",
+                        gr.update(visible=True, value=table_data)  # 显示关键词表格并更新数据
+                    )
+                
+                except ImportError:
+                    LOG.error("关键词提取模块未找到")
+                    return (
+                        "### ❌ 错误\n关键词提取模块未找到",
+                        "## ℹ️ 系统状态\n缺少关键词提取功能模块",
+                        gr.update(visible=False)
+                    )
+                except Exception as e:
+                    LOG.error(f"提取关键词时出错: {e}")
+                    import traceback
+                    LOG.error(traceback.format_exc())
+                    return (
+                        f"### ❌ 提取失败\n{str(e)}",
+                        f"## ℹ️ 系统状态\n关键词提取失败: {str(e)}",
+                        gr.update(visible=False)
+                    )
             
             except Exception as e:
                 LOG.error(f"提取关键词时发生错误: {str(e)}")
@@ -805,7 +871,7 @@ def create_main_interface():
         
         extract_button.click(
             extract_keywords,
-            inputs=[subtitle_video_dropdown, extract_count, coca_checkbox],
+            inputs=[subtitle_video_dropdown, coca_checkbox],
             outputs=[keywords_result, status_md, keywords_table]
         )
         

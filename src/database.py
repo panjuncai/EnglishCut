@@ -289,8 +289,8 @@ class DatabaseManager:
         为指定字幕创建重点单词
         
         参数:
-        - subtitle_id: 字幕ID
-        - keywords: 单词列表，每个单词包含 key_word, phonetic_symbol, explain_text, coca
+        - subtitle_id: 字幕ID (如果关键词列表中每个单词都有自己的subtitle_id，则此参数可以忽略)
+        - keywords: 单词列表，每个单词包含 key_word, phonetic_symbol, explain_text, coca, subtitle_id(可选)
         
         返回:
         - List[int]: 创建的单词ID列表
@@ -301,11 +301,18 @@ class DatabaseManager:
             cursor = conn.cursor()
             
             for keyword in keywords:
+                # 优先使用关键词自身的subtitle_id，如果没有则使用参数传入的subtitle_id
+                current_subtitle_id = keyword.get('subtitle_id', subtitle_id)
+                
+                if not current_subtitle_id:
+                    LOG.warning(f"⚠️ 跳过无效的字幕ID: {keyword.get('key_word', '未知单词')}")
+                    continue
+                
                 cursor.execute("""
                     INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text, coca)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
-                    subtitle_id,
+                    current_subtitle_id,
                     keyword.get('key_word'),
                     keyword.get('phonetic_symbol', ''),
                     keyword.get('explain_text', ''),
@@ -316,7 +323,7 @@ class DatabaseManager:
             
             conn.commit()
             
-            LOG.info(f"📊 创建重点单词: {len(keyword_ids)} 个 (字幕ID: {subtitle_id})")
+            LOG.info(f"📊 创建重点单词: {len(keyword_ids)} 个")
             return keyword_ids
     
     def get_series(self, series_id: int = None) -> List[Dict]:
@@ -597,6 +604,51 @@ class DatabaseManager:
                     
         except Exception as e:
             LOG.error(f"❌ 删除字幕失败: {e}")
+            return False
+
+    def delete_keywords_by_series_id(self, series_id: int) -> bool:
+        """
+        删除指定系列的所有关键词
+        
+        参数:
+        - series_id: 系列ID
+        
+        返回:
+        - bool: 是否删除成功
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 先获取系列的所有字幕ID
+                cursor.execute("""
+                    SELECT id FROM t_subtitle 
+                    WHERE series_id = ?
+                """, (series_id,))
+                
+                subtitle_ids = [row[0] for row in cursor.fetchall()]
+                
+                if not subtitle_ids:
+                    LOG.warning(f"⚠️ 系列ID={series_id}没有字幕，无法删除关键词")
+                    return False
+                
+                # 拼接字幕ID的IN子句
+                placeholders = ','.join(['?'] * len(subtitle_ids))
+                
+                # 删除这些字幕相关的所有关键词
+                cursor.execute(f"""
+                    DELETE FROM t_keywords 
+                    WHERE subtitle_id IN ({placeholders})
+                """, subtitle_ids)
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                LOG.info(f"📊 删除系列ID={series_id}的关键词: {deleted_count}条")
+                return True
+                    
+        except Exception as e:
+            LOG.error(f"❌ 删除关键词失败: {e}")
             return False
 
 # 全局数据库实例

@@ -20,7 +20,7 @@ class KeywordExtractor:
         self.client = client
         
         # 提示词模板
-        self.prompt_template = """我是一名大学生，英语水平在四六级左右。请分析以下英文文本，提取出对我这个水平来说比较重要的词汇。
+        self.prompt_template = """我是一名大学生，英语水平在六级左右。请分析以下英文文本，提取出对我这个水平来说比较重要的词汇。
 
 请按照以下格式返回，每个词汇一行：
 词汇 /音标/ 中文解释
@@ -29,10 +29,10 @@ class KeywordExtractor:
 come up with /kʌm ʌp wɪð/ 想出，提出
 artificial /ˌɑːtɪˈfɪʃəl/ adj. 人工的，人造的
 
-要求：
-1. 只提取对大学生英语学习有价值的词汇(范围是：考研、雅思、托福、GRE)
-2. 包括短语和搭配
-3. 避免过于简单的词汇（如：the, a, is等）
+要求： 
+1. 只提取考研、雅思、托福、GRE范围内的单词
+2. 不要提取简单的词汇
+3. 包括短语和搭配
 4. 音标使用国际音标标准
 5. 中文解释简洁准确, 词性要标注
 
@@ -64,7 +64,7 @@ artificial /ˌɑːtɪˈfɪʃəl/ adj. 人工的，人造的
             
             # 调用OpenAI API
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "你是一个专业的英语教师，专门帮助大学生学习英语词汇。"},
                     {"role": "user", "content": prompt}
