@@ -118,6 +118,41 @@ def create_database_interface():
                 
                 extract_status = gr.Textbox(label="提取状态", interactive=False, placeholder="等待开始...")
                 extract_progress = gr.Textbox(label="提取进度", interactive=False)
+            
+            # 视频烧制
+            with gr.TabItem("🎬 视频烧制"):
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 🎯 重点单词烧制")
+                        gr.Markdown("将COCA排名>5000的重点单词烧制到竖屏视频中，专为手机观看优化")
+                        
+                        burn_series_id = gr.Number(label="系列ID", precision=0)
+                        
+                        with gr.Row():
+                            preview_btn = gr.Button("👀 预览烧制信息", variant="secondary")
+                            burn_btn = gr.Button("🎬 开始烧制", variant="primary")
+                        
+                        output_dir_input = gr.Textbox(
+                            label="输出目录", 
+                            value="output", 
+                            placeholder="烧制视频的保存目录"
+                        )
+                    
+                    with gr.Column(scale=1):
+                        preview_info = gr.Markdown("## 📋 烧制预览\n请先选择系列并点击预览")
+                
+                # 烧制进度和结果
+                burn_progress = gr.Textbox(
+                    label="烧制进度", 
+                    interactive=False, 
+                    placeholder="等待开始烧制..."
+                )
+                
+                burn_result = gr.Textbox(
+                    label="烧制结果", 
+                    interactive=False,
+                    placeholder="烧制完成后这里将显示输出文件路径"
+                )
 
         def update_statistics():
             """更新统计信息"""
@@ -447,6 +482,98 @@ def create_database_interface():
                 LOG.error(f"更新COCA信息失败: {e}")
                 yield f"❌ 更新失败: {str(e)}"
 
+        def preview_burn_info(series_id):
+            """预览烧制信息"""
+            if not series_id:
+                return "## 📋 烧制预览\n❌ 请输入系列ID"
+            
+            try:
+                from video_subtitle_burner import video_burner
+                
+                # 获取系列信息
+                series_list = db_manager.get_series()
+                target_series = None
+                for series in series_list:
+                    if series['id'] == int(series_id):
+                        target_series = series
+                        break
+                
+                if not target_series:
+                    return "## 📋 烧制预览\n❌ 找不到指定的系列"
+                
+                # 获取预览信息
+                preview = video_burner.get_burn_preview(int(series_id))
+                
+                preview_text = f"""## 📋 烧制预览
+
+### 🎬 系列信息
+- **名称**: {target_series['name']}
+- **文件类型**: {target_series.get('file_type', '未知')}
+- **时长**: {target_series.get('duration', 0):.1f}秒
+
+### 📊 烧制统计
+- **重点单词**: {preview['total_keywords']} 个
+- **烧制时长**: {preview['total_duration']} 秒
+- **预估文件**: {preview['estimated_file_size']}
+
+### 📈 词频分布
+- **5000-10000**: {preview['coca_distribution'].get('5000-10000', 0)} 个
+- **10000-20000**: {preview['coca_distribution'].get('10000-20000', 0)} 个
+- **20000以上**: {preview['coca_distribution'].get('20000+', 0)} 个
+
+### 🔤 示例单词
+"""
+                
+                if preview['sample_keywords']:
+                    for i, kw in enumerate(preview['sample_keywords'], 1):
+                        preview_text += f"{i}. **{kw['keyword']}** {kw['phonetic']} - {kw['explanation']} (COCA: {kw['coca_rank']})\n"
+                else:
+                    preview_text += "暂无符合条件的重点单词"
+                
+                return preview_text
+                
+            except Exception as e:
+                LOG.error(f"预览烧制信息失败: {e}")
+                return f"## 📋 烧制预览\n❌ 预览失败: {str(e)}"
+
+        def burn_video_with_progress(series_id, output_dir):
+            """烧制视频（带进度显示）"""
+            if not series_id:
+                yield "❌ 请输入系列ID", ""
+                return
+            
+            try:
+                from video_subtitle_burner import video_burner
+                
+                progress_log = []
+                
+                def progress_callback(message):
+                    progress_log.append(message)
+                    return '\n'.join(progress_log[-10:])  # 显示最近10条消息
+                
+                # 开始烧制
+                yield "🎬 开始烧制...", ""
+                
+                output_video = video_burner.process_series_video(
+                    int(series_id),
+                    output_dir,
+                    progress_callback
+                )
+                
+                if output_video:
+                    final_message = "✅ 烧制完成！"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), f"🎉 烧制成功！\n输出文件: {output_video}"
+                else:
+                    final_message = "❌ 烧制失败"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), "❌ 烧制失败，请检查日志"
+                    
+            except Exception as e:
+                error_msg = f"烧制过程失败: {str(e)}"
+                LOG.error(error_msg)
+                yield error_msg, "❌ 烧制失败"
+
         def extract_keywords_ai(series_id):
             """使用AI提取关键词"""
             if not series_id:
@@ -565,6 +692,19 @@ def create_database_interface():
             fn=update_video_info_func,
             inputs=[update_series_id, update_new_name, update_new_path],
             outputs=[update_result]
+        )
+        
+        # 视频烧制事件绑定
+        preview_btn.click(
+            fn=preview_burn_info,
+            inputs=[burn_series_id],
+            outputs=[preview_info]
+        )
+        
+        burn_btn.click(
+            fn=burn_video_with_progress,
+            inputs=[burn_series_id, output_dir_input],
+            outputs=[burn_progress, burn_result]
         )
     
     return interface
