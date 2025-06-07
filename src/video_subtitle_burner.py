@@ -520,15 +520,15 @@ class VideoSubtitleBurner:
     
     def process_series_video(self, 
                             series_id: int, 
-                            output_dir: str = "output",
-                            title_text: str = "第二遍：重点词汇消化",
+                            output_dir: str = "input",
+                            title_text: str = "第三遍：重点词汇+字幕",
                             progress_callback=None) -> Optional[str]:
         """
         处理整个系列的视频烧制
         
         参数:
         - series_id: 系列ID
-        - output_dir: 输出目录
+        - output_dir: 输出目录，默认为input
         - title_text: 顶部标题栏文字
         - progress_callback: 进度回调函数
         
@@ -581,8 +581,20 @@ class VideoSubtitleBurner:
             
             # 准备输出路径
             os.makedirs(output_dir, exist_ok=True)
-            base_name = os.path.splitext(os.path.basename(input_video))[0]
-            output_video = os.path.join(output_dir, f"{base_name}_keywords_mobile.mp4")
+            
+            # 获取原始文件名中的基础部分（例如从9_1.mp4中提取9）
+            input_basename = os.path.basename(input_video)
+            if "_" in input_basename:
+                base_name = input_basename.split("_")[0]  # 获取下划线前的部分（例如9）
+            else:
+                # 如果没有下划线，直接使用文件名（不含扩展名）
+                base_name = os.path.splitext(input_basename)[0]
+            
+            # 生成新的文件名：基础名称_3.mp4
+            output_video = os.path.join(output_dir, f"{base_name}_3.mp4")
+            
+            if progress_callback:
+                progress_callback(f"📋 输入视频: {input_basename}, 输出视频: {base_name}_3.mp4")
             
             # 执行烧制
             success = self.burn_video_with_keywords(
@@ -597,8 +609,8 @@ class VideoSubtitleBurner:
                 # 更新数据库中的烧制视频信息
                 db_manager.update_series_video_info(
                     series_id,
-                    new_name=os.path.basename(output_video),
-                    new_file_path=output_video
+                    third_name=os.path.basename(output_video),
+                    third_file_path=output_video
                 )
                 
                 if progress_callback:

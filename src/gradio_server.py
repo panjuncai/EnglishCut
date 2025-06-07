@@ -324,10 +324,50 @@ def create_main_interface():
                 gr.Markdown("""
                 ## 🔥 视频烧制
                 
-                此步骤将在后续开发中实现...
+                此步骤将完成:
+                1. 选择带字幕和关键词的视频
+                2. 预览要烧制的视频内容
+                3. 一键生成烧制视频，自动存入数据库
                 """)
                 
-                burn_info = gr.Markdown("### 功能开发中\n此功能将在后续版本中实现...")
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        # 选择带字幕的视频
+                        burn_video_dropdown = gr.Dropdown(
+                            label="📋 选择已有字幕和关键词的视频",
+                            choices=subtitle_videos,
+                            value=None,
+                            interactive=True
+                        )
+                        
+                        with gr.Row():
+                            preview_btn = gr.Button("👀 预览烧制信息", variant="secondary")
+                            burn_btn = gr.Button("🎬 烧制关键词+字幕视频", variant="primary")
+                        
+                        # 输出目录
+                        output_dir_input = gr.Textbox(
+                            label="输出目录", 
+                            value="input", 
+                            placeholder="烧制视频的保存目录"
+                        )
+                    
+                    with gr.Column(scale=1):
+                        burn_preview = gr.Markdown("## 📋 烧制预览\n请先选择视频并点击预览")
+                
+                # 视频预览
+                video_preview = gr.Video(
+                    label="预览视频",
+                    visible=False
+                )
+                
+                # 烧制进度和结果
+                burn_progress = gr.Textbox(
+                    label="烧制进度", 
+                    interactive=False, 
+                    placeholder="等待开始烧制..."
+                )
+                
+                burn_result = gr.Markdown("### 烧制结果\n等待烧制...")
         
         # 辅助函数
         def update_file_info(file_path):
@@ -801,6 +841,186 @@ def create_main_interface():
                     gr.update(visible=False)
                 )
         
+        def preview_burn_video(video_selection):
+            """预览烧制视频信息"""
+            LOG.info(f"预览烧制 - 选择的视频: {video_selection}")
+            
+            if not video_selection:
+                return "## 📋 烧制预览\n❌ 请先选择视频", gr.update(visible=False)
+            
+            try:
+                # 从选择中提取系列ID
+                # 处理不同格式：ID-NAME-PATH, ID-NAME, ID-NAME (字幕数: N)
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                else:
+                    parts = video_selection.split('-')
+                
+                if len(parts) >= 1:
+                    video_id_str = parts[0].strip()
+                    try:
+                        video_id = int(video_id_str)
+                        LOG.info(f"提取的视频ID: {video_id}")
+                    except ValueError:
+                        LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
+                        return f"## 📋 烧制预览\n❌ '{video_id_str}' 不是有效的视频ID", gr.update(visible=False)
+                else:
+                    return "## 📋 烧制预览\n❌ 视频选择格式错误", gr.update(visible=False)
+                
+                # 获取系列信息
+                series_list = db_manager.get_series(video_id)
+                if not series_list:
+                    LOG.error(f"未找到ID为 {video_id} 的视频")
+                    return "## 📋 烧制预览\n❌ 未找到选择的视频", gr.update(visible=False)
+                
+                series = series_list[0]
+                
+                # 获取字幕和关键词信息
+                subtitles = db_manager.get_subtitles(video_id)
+                keywords = db_manager.get_keywords(series_id=video_id)
+                
+                if not subtitles:
+                    return "## 📋 烧制预览\n❌ 所选视频没有字幕", gr.update(visible=False)
+                
+                if not keywords:
+                    return "## 📋 烧制预览\n❌ 所选视频没有关键词", gr.update(visible=False)
+                
+                # 导入视频烧制模块
+                from video_subtitle_burner import video_burner
+                
+                # 获取预览信息
+                preview = video_burner.get_burn_preview(video_id)
+                
+                # 检查是否有预处理视频可预览
+                video_preview_path = None
+                if 'new_file_path' in series and series['new_file_path'] and os.path.exists(series['new_file_path']):
+                    video_preview_path = series['new_file_path']
+                
+                # 构建预览信息
+                preview_text = f"""## 📋 烧制预览
+
+### 🎬 系列信息
+- **名称**: {series['name']}
+- **文件类型**: {series.get('file_type', '未知')}
+- **时长**: {series.get('duration', 0):.1f}秒
+- **预处理视频**: {os.path.basename(series.get('new_file_path', '未设置'))}
+
+### 📊 烧制统计
+- **字幕数量**: {len(subtitles)} 条
+- **关键词数**: {len(keywords)} 个
+- **烧制单词**: {preview['total_keywords']} 个
+- **烧制时长**: {preview['total_duration']} 秒
+- **预估文件**: {preview['estimated_file_size']}
+
+### 📈 词频分布
+- **5000-10000**: {preview['coca_distribution'].get('5000-10000', 0)} 个
+- **10000-20000**: {preview['coca_distribution'].get('10000-20000', 0)} 个
+- **20000以上**: {preview['coca_distribution'].get('20000+', 0)} 个
+"""
+
+                if preview['sample_keywords']:
+                    preview_text += "\n### 🔤 示例单词\n"
+                    for i, kw in enumerate(preview['sample_keywords'], 1):
+                        preview_text += f"{i}. **{kw['keyword']}** {kw.get('phonetic', '')} - {kw.get('explanation', '')} (COCA: {kw.get('coca_rank', 'N/A')})\n"
+                else:
+                    preview_text += "\n### 🔤 暂无符合条件的重点单词"
+                
+                # 返回预览信息和视频预览更新
+                if video_preview_path:
+                    return preview_text, gr.update(visible=True, value=video_preview_path)
+                else:
+                    return preview_text, gr.update(visible=False)
+                    
+            except Exception as e:
+                LOG.error(f"预览烧制信息失败: {e}")
+                import traceback
+                LOG.error(traceback.format_exc())
+                return f"## 📋 烧制预览\n❌ 预览失败: {str(e)}", gr.update(visible=False)
+
+        def burn_video_with_progress(video_selection, output_dir):
+            """烧制视频（带进度显示）"""
+            if not video_selection:
+                yield "❌ 请先选择视频", "### 烧制结果\n❌ 请先选择视频"
+                return
+            
+            try:
+                # 从选择中提取系列ID
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                else:
+                    parts = video_selection.split('-')
+                
+                if len(parts) >= 1:
+                    video_id_str = parts[0].strip()
+                    try:
+                        video_id = int(video_id_str)
+                        LOG.info(f"提取的视频ID: {video_id}")
+                    except ValueError:
+                        LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
+                        yield f"❌ '{video_id_str}' 不是有效的视频ID", f"### 烧制结果\n❌ 无效的视频ID"
+                        return
+                else:
+                    yield "❌ 视频选择格式错误", "### 烧制结果\n❌ 视频选择格式错误"
+                    return
+                
+                # 导入视频烧制模块
+                from video_subtitle_burner import video_burner
+                
+                progress_log = []
+                
+                def progress_callback(message):
+                    progress_log.append(message)
+                    return '\n'.join(progress_log[-10:])  # 显示最近10条消息
+                
+                # 开始烧制
+                yield "🎬 开始烧制...", "### 烧制结果\n⏳ 正在烧制中..."
+                
+                # 获取系列信息以显示更详细的进度
+                series_list = db_manager.get_series(video_id)
+                if series_list:
+                    series = series_list[0]
+                    input_video = series.get('new_file_path', '')
+                    if input_video:
+                        input_basename = os.path.basename(input_video)
+                        yield f"🎬 准备烧制：基于 {input_basename} 生成 [原始名称]_3.mp4", "### 烧制结果\n⏳ 正在烧制中..."
+                
+                # 执行烧制
+                output_video = video_burner.process_series_video(
+                    video_id,
+                    output_dir,
+                    title_text="第二遍：重点词汇消化",
+                    progress_callback=progress_callback
+                )
+                
+                if output_video:
+                    # 将烧制视频路径保存到third_name和third_file_path
+                    db_manager.update_series_video_info(
+                        video_id,
+                        third_name=os.path.basename(output_video),
+                        third_file_path=output_video
+                    )
+                    
+                    final_message = "✅ 烧制完成！"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), f"""### 烧制结果
+🎉 **烧制成功**
+- **输出文件**: {os.path.basename(output_video)}
+- **保存路径**: {output_video}
+- **状态**: 已更新到数据库
+- **说明**: 基于输入视频（如9_1.mp4）生成输出视频（9_3.mp4），存放在input文件夹下
+"""
+                else:
+                    final_message = "❌ 烧制失败"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), "### 烧制结果\n❌ 烧制失败，请检查日志"
+                    
+            except Exception as e:
+                error_msg = f"烧制过程失败: {str(e)}"
+                LOG.error(error_msg)
+                yield error_msg, f"### 烧制结果\n❌ 烧制失败: {str(e)}"
+        
         # 绑定事件
         # 步骤1: 上传文件
         file_input.change(
@@ -873,6 +1093,28 @@ def create_main_interface():
             extract_keywords,
             inputs=[subtitle_video_dropdown, coca_checkbox],
             outputs=[keywords_result, status_md, keywords_table]
+        )
+        
+        # 步骤4: 视频烧制
+        # 设置tab切换时的事件，确保下拉框选项是最新的
+        tab4.select(
+            load_subtitle_videos,
+            inputs=[],
+            outputs=[burn_video_dropdown]
+        )
+        
+        # 预览视频
+        preview_btn.click(
+            preview_burn_video,
+            inputs=[burn_video_dropdown],
+            outputs=[burn_preview, video_preview]
+        )
+        
+        # 烧制视频
+        burn_btn.click(
+            burn_video_with_progress,
+            inputs=[burn_video_dropdown, output_dir_input],
+            outputs=[burn_progress, burn_result]
         )
         
         # 添加界面加载事件，确保在界面加载时就加载所有下拉框选项
