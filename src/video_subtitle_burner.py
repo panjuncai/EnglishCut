@@ -189,7 +189,8 @@ class VideoSubtitleBurner:
                     douyin_font = font
                     break
         else:
-            LOG.info(f"找到抖音字体: {douyin_font}")
+            pass
+            # LOG.info(f"找到抖音字体: {douyin_font}")
         
         # 视频滤镜：假设输入已经是9:16比例的视频，只添加顶部和底部区域
         filter_chain = [
@@ -406,6 +407,7 @@ class VideoSubtitleBurner:
             
             # 处理每个字幕段落
             for i, item in enumerate(burn_data):
+                # LOG.info(f"item: {item}")
                 if progress_callback and i % 10 == 0:  # 每处理10个字幕更新一次进度
                     if item['has_keyword']:
                         progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}: 关键词 {item['keyword']}")
@@ -425,9 +427,12 @@ class VideoSubtitleBurner:
                 start_time = item['begin_time']
                 end_time = item['end_time']
                 
-                # 为当前时间段创建临时输出文件
-                temp_output = os.path.join(self.temp_dir, f"segment_{i}.mp4")
-                LOG.info(f"temp_output: {temp_output}")
+                # 为当前时间段创建临时文件名
+                # 第一步：原视频裁剪后的临时文件
+                temp_segment_path = os.path.join(self.temp_dir, f"temp_segment_{i}.mp4")
+                # 第二步：添加字幕和关键词后的临时文件
+                processed_segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                
                 # 裁剪当前时间段的视频
                 segment_cmd = [
                     'ffmpeg', '-y',
@@ -436,8 +441,11 @@ class VideoSubtitleBurner:
                     '-to', str(end_time),
                     '-c:v', 'libx264', '-c:a', 'aac',
                     '-vsync', '2',  # 保持视频同步
-                    self.temp_dir + f"/temp_segment_{i}.mp4"
+                    temp_segment_path
                 ]
+                
+                if progress_callback and i % 5 == 0:  # 减少日志频率
+                    LOG.info(f"裁剪视频片段 {i+1}/{len(burn_data)}: {start_time:.2f}-{end_time:.2f}")
                 
                 # 执行裁剪命令
                 proc = subprocess.Popen(
@@ -462,13 +470,13 @@ class VideoSubtitleBurner:
                 
                 process_cmd = [
                     'ffmpeg', '-y',
-                    '-i', self.temp_dir + f"/temp_segment_{i}.mp4",
+                    '-i', temp_segment_path,
                     '-vf', video_filter,
                     '-aspect', '9:16',  # 设置宽高比为9:16
                     '-c:a', 'copy',  # 音频直接复制
                     '-preset', 'medium',
                     '-crf', '23',
-                    temp_output
+                    processed_segment_path
                 ]
                 
                 # 执行处理命令
@@ -482,10 +490,19 @@ class VideoSubtitleBurner:
             
             # 创建包含所有处理过的片段的文件列表
             segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+            LOG.info(f"segments_list_path: {segments_list_path}")
             with open(segments_list_path, 'w') as f:
                 for i in range(len(burn_data)):
-                    f.write(f"file '{self.temp_dir}/segment_{i}.mp4'\n")
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    # 使用绝对路径，确保ffmpeg能找到文件
+                    abs_segment_path = os.path.abspath(segment_path)
+                    # 需要特殊处理路径中的单引号，替换为\'
+                    escaped_path = abs_segment_path.replace("'", "\\'")
+                    f.write(f"file '{escaped_path}'\n")
             
+            if progress_callback:
+                progress_callback("🔄 合并所有视频片段...")
+                
             # 使用concat过滤器合并所有片段
             concat_cmd = [
                 'ffmpeg', '-y',
@@ -495,9 +512,6 @@ class VideoSubtitleBurner:
                 '-c', 'copy',
                 output_video
             ]
-            
-            if progress_callback:
-                progress_callback("🔄 合并所有视频片段...")
             
             # 执行合并命令
             proc = subprocess.Popen(
@@ -528,21 +542,33 @@ class VideoSubtitleBurner:
             return False
         finally:
             pass
-            # 清理临时文件
+            # # 清理临时文件
             # try:
-            #     # 保留临时目录，但清理里面的文件，以便下次使用
-            #     for file in os.listdir(self.temp_dir):
-            #         try:
-            #             os.remove(os.path.join(self.temp_dir, file))
-            #         except:
-            #             pass
-            # except:
-            #     pass
+            #     # 清理临时视频文件
+            #     for i in range(len(burn_data)):
+            #         temp_files = [
+            #             os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
+            #             os.path.join(self.temp_dir, f"segment_{i}.mp4")
+            #         ]
+            #         for temp_file in temp_files:
+            #             if os.path.exists(temp_file):
+            #                 os.remove(temp_file)
+            #                 LOG.debug(f"已删除临时文件: {temp_file}")
+                
+            #     # 删除临时片段列表文件
+            #     segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+            #     if os.path.exists(segments_list_path):
+            #         os.remove(segments_list_path)
+            #         LOG.debug("已删除临时片段列表文件")
+                
+            #     LOG.info("🧹 临时文件清理完成")
+            # except Exception as e:
+            #     LOG.warning(f"清理临时文件失败: {e}")
     
     def process_series_video(self, 
                             series_id: int, 
                             output_dir: str = "input",
-                            title_text: str = "第三遍：重点词汇+字幕",
+                            title_text: str = "",
                             progress_callback=None) -> Optional[str]:
         """
         处理整个系列的视频烧制
@@ -708,7 +734,7 @@ class VideoSubtitleBurner:
                 'coca_distribution': coca_ranges,
                 'sample_keywords': preview_keywords,
                 'estimated_file_size': f"{(total_duration/60) * 15:.1f} MB",  # 估算: 每分钟约15MB
-                'title': "第三遍：重点词汇+字幕"
+                'title': ""
             }
             
         except Exception as e:
@@ -721,7 +747,7 @@ class VideoSubtitleBurner:
                 'coca_distribution': {},
                 'sample_keywords': [],
                 'estimated_file_size': '0 MB',
-                'title': "第三遍：重点词汇+字幕"
+                'title': ""
             }
     
     def cleanup(self):

@@ -322,7 +322,7 @@ class MediaProcessor:
                     
                     # 获取对应的文本
                     english_text = chunk.get('text', '')
-                    chinese_text = chunk.get('chinese_text', '')  # 从chunk中直接获取中文文本
+                    chinese_text = chunk.get('chinese_text', '').lstrip("短语：")  # 从chunk中直接获取中文文本
                     
                     # 确保时间有效
                     begin_time = max(0, start_time)

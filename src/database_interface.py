@@ -595,7 +595,7 @@ def create_database_interface():
                 output_video = video_burner.process_series_video(
                     int(series_id),
                     output_dir,
-                    title_text="第二遍：重点词汇消化",
+                    title_text="第三遍：完全消化",
                     progress_callback=progress_callback
                 )
                 
