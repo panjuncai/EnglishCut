@@ -99,8 +99,9 @@ class MediaProcessor:
                     # 如果找到了对应的系列，更新file_info并记录系列ID
                     existing_series_id = series_with_path['id']
                     LOG.info(f"✅ 根据预处理视频路径找到系列: ID={existing_series_id}")
-                    file_info['name'] = series_with_path['name']
-                    file_info['original_path'] = series_with_path['file_path']
+                    # 更新file_info中的name和original_path，取9:16预处理后的视频名称
+                    file_info['name'] = series_with_path['new_name']
+                    file_info['original_path'] = series_with_path['new_file_path']
                 else:
                     LOG.warning(f"⚠️ 未找到与路径匹配的系列: {processed_video_path}, 将创建新系列")
             

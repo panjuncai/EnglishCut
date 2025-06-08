@@ -85,7 +85,7 @@ def load_subtitle_videos():
             LOG.warning("⚠️ 数据库中没有系列数据")
             return []
         
-        LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
+        # LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
         
         # 准备下拉选项
         options = []
@@ -1071,14 +1071,19 @@ def create_main_interface():
             try:
                 video_list = load_video_list()
                 LOG.info(f"实时刷新视频列表，获取到 {len(video_list)} 个视频")
-                # Gradio 5.x版本的更新方式
-                return video_list
+                
+                # 详细输出前3个选项，用于调试
+                for i, option in enumerate(video_list[:3]):
+                    LOG.info(f"更新后选项 {i+1}: {option}")
+                
+                # 返回更新后的列表 - 使用gr.update()
+                return gr.update(choices=video_list)
             except Exception as e:
                 LOG.error(f"刷新视频列表失败: {e}")
                 import traceback
                 LOG.error(traceback.format_exc())
-                # 出错时返回空列表
-                return []
+                # 出错时返回空更新
+                return gr.update(choices=[])
         
         # 为字幕视频下拉框添加刷新功能
         def refresh_subtitle_videos():
@@ -1086,14 +1091,19 @@ def create_main_interface():
             try:
                 subtitle_list = load_subtitle_videos()
                 LOG.info(f"实时刷新字幕视频列表，获取到 {len(subtitle_list)} 个视频")
-                # Gradio 5.x版本的更新方式
-                return subtitle_list
+                
+                # 详细输出前3个选项，用于调试
+                for i, option in enumerate(subtitle_list[:3]):
+                    LOG.info(f"更新后字幕视频选项 {i+1}: {option}")
+                
+                # 返回更新后的列表 - 使用gr.update()
+                return gr.update(choices=subtitle_list)
             except Exception as e:
                 LOG.error(f"刷新字幕视频列表失败: {e}")
                 import traceback
                 LOG.error(traceback.format_exc())
-                # 出错时返回空列表
-                return []
+                # 出错时返回空更新
+                return gr.update(choices=[])
         
         # 绑定事件
         # 步骤1: 上传文件
@@ -1114,24 +1124,34 @@ def create_main_interface():
             outputs=[upload_result, status_md]
         ).then(
             # 更新所有视频下拉框
-            refresh_video_list,
+            fn=lambda: gr.update(choices=load_video_list()),
             inputs=[],
             outputs=[video_dropdown]
         ).then(
+            # 更新字幕上传的视频下拉框
+            fn=lambda: gr.update(choices=load_video_list()),
+            inputs=[],
+            outputs=[video_dropdown_upload]
+        ).then(
             # 更新带字幕的视频下拉框
-            refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[subtitle_video_dropdown]
+        ).then(
+            # 更新烧制视频的下拉框
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
+            inputs=[],
+            outputs=[burn_video_dropdown]
         )
         
         # 步骤2: 字幕生成
         # 设置tab切换时的事件，确保下拉框选项是最新的
         tab2.select(
-            fn=refresh_video_list,
+            fn=lambda: gr.update(choices=load_video_list()),
             inputs=[],
             outputs=[video_dropdown]
         ).then(
-            fn=refresh_video_list,
+            fn=lambda: gr.update(choices=load_video_list()),
             inputs=[],
             outputs=[video_dropdown_upload]
         )
@@ -1156,9 +1176,14 @@ def create_main_interface():
             outputs=[result_text, translation_text, subtitle_preview, subtitle_gen_result, status_md]
         ).then(
             # 更新带字幕的视频下拉框
-            refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[subtitle_video_dropdown]
+        ).then(
+            # 同时更新烧制视频的下拉框
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
+            inputs=[],
+            outputs=[burn_video_dropdown]
         )
         
         # 上传字幕
@@ -1168,15 +1193,20 @@ def create_main_interface():
             outputs=[subtitle_upload_result, status_md]
         ).then(
             # 更新带字幕的视频下拉框
-            refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[subtitle_video_dropdown]
+        ).then(
+            # 同时更新烧制视频的下拉框
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
+            inputs=[],
+            outputs=[burn_video_dropdown]
         )
         
         # 步骤3: 关键词提取
         # 设置tab切换时的事件，确保下拉框选项是最新的
         tab3.select(
-            fn=refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[subtitle_video_dropdown]
         )
@@ -1197,7 +1227,7 @@ def create_main_interface():
         # 步骤4: 视频烧制
         # 设置tab切换时的事件，确保下拉框选项是最新的
         tab4.select(
-            fn=refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[burn_video_dropdown]
         )
@@ -1225,19 +1255,19 @@ def create_main_interface():
 
         # 添加界面加载事件，确保在界面加载时就加载所有下拉框选项
         interface.load(
-            fn=refresh_video_list,
+            fn=lambda: gr.update(choices=load_video_list()),
             inputs=[],
             outputs=[video_dropdown]
         ).then(
-            fn=refresh_video_list,
+            fn=lambda: gr.update(choices=load_video_list()),
             inputs=[],
             outputs=[video_dropdown_upload]
         ).then(
-            fn=refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[subtitle_video_dropdown]
         ).then(
-            fn=refresh_subtitle_videos,
+            fn=lambda: gr.update(choices=load_subtitle_videos()),
             inputs=[],
             outputs=[burn_video_dropdown]
         )
