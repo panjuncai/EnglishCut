@@ -162,24 +162,21 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         LOG.info(f"🌏 英文转录chunks: {chunks}")
         
         # 如果需要双语，翻译英文为中文
-        chinese_chunks = []
         chinese_text = ""
         
         if return_bilingual:
             LOG.info("🌏 开始使用GPT-4o-mini生成中文翻译...")
             
-            # 只翻译每个时间戳片段，不再翻译整体文本
+            # 只翻译每个时间戳片段，直接添加到原始chunks中
             for chunk in chunks:
                 english_chunk_text = chunk.get("text", "").strip()
                 if english_chunk_text:
                     chinese_chunk_text = translate_text(english_chunk_text)
-                    chinese_chunks.append({
-                        "text": chinese_chunk_text,
-                        "timestamp": chunk.get("timestamp", [None, None])
-                    })
+                    # 直接将翻译结果添加到原始chunk中
+                    chunk["chinese_text"] = chinese_chunk_text
             
             # 将所有中文片段合并为整体中文文本，用于兼容性
-            chinese_text = " ".join([chunk.get("text", "") for chunk in chinese_chunks])
+            chinese_text = " ".join([chunk.get("chinese_text", "") for chunk in chunks])
         
         inference_time = time.time() - inference_start
         total_time = time.time() - start_time
@@ -198,11 +195,10 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         return {
             "english_text": english_text,
             "chinese_text": chinese_text if return_bilingual else "",
-            "english_chunks": chunks,
-            "chinese_chunks": chinese_chunks if return_bilingual else [],
             "text": english_text,  # 保持兼容性
             "chunks": chunks,     # 保持兼容性
             "processing_time": total_time,
+            "audio_duration": audio_duration,
             "is_bilingual": return_bilingual
         }
     except Exception as e:
@@ -222,20 +218,14 @@ def format_time_lrc(seconds):
     secs = seconds % 60
     return f"[{minutes:02d}:{secs:05.2f}]"
 
-def align_bilingual_chunks(english_chunks, chinese_chunks):
-    """对齐英文和中文字幕块"""
+def align_bilingual_chunks(chunks):
+    """准备双语对齐的字幕块，使用整合后的数据结构"""
     aligned_chunks = []
     
-    # 直接使用英文时间戳和对应的中文翻译
-    for i, eng_chunk in enumerate(english_chunks):
-        english_text = eng_chunk.get("text", "").strip()
-        timestamp = eng_chunk.get("timestamp", [None, None])
-        
-        # 获取对应的中文翻译
-        if i < len(chinese_chunks):
-            chinese_text = chinese_chunks[i].get("text", "").strip()
-        else:
-            chinese_text = ""
+    for chunk in chunks:
+        english_text = chunk.get("text", "").strip()
+        chinese_text = chunk.get("chinese_text", "").strip()
+        timestamp = chunk.get("timestamp", [None, None])
         
         aligned_chunks.append({
             "timestamp": timestamp,
@@ -265,12 +255,11 @@ def generate_lrc_content(result_data, audio_filename="audio"):
     
     if is_bilingual:
         # 双语模式
-        english_chunks = result_data.get("english_chunks", [])
-        chinese_chunks = result_data.get("chinese_chunks", [])
+        chunks = result_data.get("chunks", [])
         
-        if english_chunks:
-            # 对齐英中字幕
-            aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
+        if chunks:
+            # 准备双语对齐字幕
+            aligned_chunks = align_bilingual_chunks(chunks)
             
             for chunk in aligned_chunks:
                 timestamp = chunk.get("timestamp", [None, None])
@@ -368,12 +357,11 @@ def generate_srt_content(result_data, audio_filename="audio"):
     
     if is_bilingual:
         # 双语模式
-        english_chunks = result_data.get("english_chunks", [])
-        chinese_chunks = result_data.get("chinese_chunks", [])
+        chunks = result_data.get("chunks", [])
         
-        if english_chunks:
-            # 对齐英中字幕
-            aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
+        if chunks:
+            # 准备双语对齐字幕
+            aligned_chunks = align_bilingual_chunks(chunks)
             
             for chunk in aligned_chunks:
                 timestamp = chunk.get("timestamp", [None, None])

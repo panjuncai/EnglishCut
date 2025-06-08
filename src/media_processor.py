@@ -278,27 +278,14 @@ class MediaProcessor:
             LOG.info(f"📝 处理字幕数据: {len(chunks)} 个chunks")
             
             if is_bilingual:
-                # 双语模式
-                english_chunks = recognition_result.get('english_chunks', [])
-                chinese_chunks = recognition_result.get('chinese_chunks', [])
-                LOG.info(f"🌐 双语模式: 英文chunks={len(english_chunks)}, 中文chunks={len(chinese_chunks)}")
-                
-                # 检查chunks、english_chunks和chinese_chunks的长度
-                # 理论上应该一致，但实际可能有差异
-                chunks_len = len(chunks)
-                english_len = len(english_chunks)
-                chinese_len = len(chinese_chunks)
-                
-                # 使用最短的长度作为循环次数，避免索引越界
-                min_length = min(chunks_len, english_len, chinese_len)
-                LOG.info(f"🔄 使用最短长度进行处理: chunks={chunks_len}, english={english_len}, chinese={chinese_len}, min={min_length}")
+                # 双语模式 - 使用新的数据结构
+                LOG.info("🌐 使用新的双语模式数据结构处理")
                 
                 # 检查和修复chunks中的时间戳
                 valid_chunks = []
                 total_duration = recognition_result.get('audio_duration', 0)
                 
-                for i in range(min_length):
-                    chunk = chunks[i] if i < chunks_len else {'timestamp': [0, 0], 'text': ''}
+                for i, chunk in enumerate(chunks):
                     timestamp = chunk.get('timestamp', [0, 0])
                     # 确保timestamp是一个至少有两个元素的列表
                     if not isinstance(timestamp, list) or len(timestamp) < 2:
@@ -307,19 +294,19 @@ class MediaProcessor:
                     # 确保结束时间不为NULL且有效
                     if timestamp[1] is None or timestamp[1] <= timestamp[0]:
                         # 如果这是最后一个chunk，使用总时长作为结束时间
-                        if i == min_length - 1 and total_duration > 0:
+                        if i == len(chunks) - 1 and total_duration > 0:
                             timestamp[1] = total_duration
                         # 否则，使用开始时间加上10秒或下一个开始时间作为结束时间
                         else:
-                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < chunks_len else 0
+                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < len(chunks) else 0
                             if next_start and next_start > timestamp[0]:
                                 timestamp[1] = next_start
                             else:
                                 timestamp[1] = timestamp[0] + 10
                     
-                    # 获取对应的文本
-                    english_text = english_chunks[i].get('text', '') if i < english_len else ''
-                    chinese_text = chinese_chunks[i].get('text', '') if i < chinese_len else ''
+                    # 获取英文和中文文本
+                    english_text = chunk.get('text', '')
+                    chinese_text = chunk.get('chinese_text', '')  # 从chunk中直接获取中文文本
                     
                     # 最后再次确保timestamp有效
                     begin_time = max(0, timestamp[0])
