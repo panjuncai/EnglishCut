@@ -169,7 +169,21 @@ class VideoSubtitleBurner:
         返回:
         - str: FFmpeg滤镜字符串
         """
-        # 指定字体路径，优先使用抖音字体，找不到再使用苹方
+        # 转义文本中的特殊字符，防止FFmpeg命令解析错误
+        def escape_text(text):
+            if not text:
+                return ""
+            # 转义FFmpeg命令中的特殊字符，特别是:,'等会影响命令解析的字符
+            # 单引号需要特别处理，在FFmpeg中使用\'转义
+            escaped = text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+            # 逗号和等号也可能导致解析问题
+            escaped = escaped.replace(",", "\\,").replace("=", "\\=")
+            return escaped
+        
+        # 转义各文本
+        top_text_escaped = escape_text(top_text)
+        
+        # 检查字体路径，优先使用抖音字体，找不到再使用苹方
         douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
         # 备选字体
         system_fonts = [
@@ -205,7 +219,7 @@ class VideoSubtitleBurner:
             "drawbox=x=0:y=1080:w=720:h=200:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
             
             # 第3步：添加顶部文字（调大白色字体，使用粗体字体文件）
-            f"drawtext=text='{top_text}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
+            f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=88:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
         ]
         
         # 第4步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
@@ -217,6 +231,7 @@ class VideoSubtitleBurner:
             # 英文文本处理
             if len(text_lines) >= 1 and text_lines[0]:
                 english_text = text_lines[0]
+                english_text_escaped = escape_text(english_text)
                 
                 # 判断英文是否过长需要分行（超过30个字符就分行）
                 eng_fontsize = 36
@@ -230,23 +245,27 @@ class VideoSubtitleBurner:
                     eng_first_line = ' '.join(words[:half_point])
                     eng_second_line = ' '.join(words[half_point:])
                     
+                    # 转义分行后的文本
+                    eng_first_line_escaped = escape_text(eng_first_line)
+                    eng_second_line_escaped = escape_text(eng_second_line)
+                    
                     # 添加英文第一行
                     filter_chain.append(
-                        f"drawtext=text='{eng_first_line}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"drawtext=text='{eng_first_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
                         f"x=(w-text_w)/2:y=1100-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=4:box=0"
                     )
                     
                     # 添加英文第二行
                     filter_chain.append(
-                        f"drawtext=text='{eng_second_line}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"drawtext=text='{eng_second_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
                         f"x=(w-text_w)/2:y=1140-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=4:box=0"
                     )
                 else:
                     # 英文行 - 位置在底部区域的上半部分
                     filter_chain.append(
-                        f"drawtext=text='{english_text}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"drawtext=text='{english_text_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
                         f"x=(w-text_w)/2:y=1120-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=4:box=0"
                     )
@@ -254,6 +273,7 @@ class VideoSubtitleBurner:
             # 中文文本处理
             if len(text_lines) >= 2 and text_lines[1]:
                 chinese_text = text_lines[1]
+                chinese_text_escaped = escape_text(chinese_text)
                 
                 # 判断中文是否过长需要分行（超过15个汉字就分行）
                 cn_fontsize = 32
@@ -271,41 +291,46 @@ class VideoSubtitleBurner:
                     cn_first_line = chinese_text[:cn_split_point]
                     cn_second_line = chinese_text[cn_split_point:]
                     
+                    # 转义分行后的文本
+                    cn_first_line_escaped = escape_text(cn_first_line)
+                    cn_second_line_escaped = escape_text(cn_second_line)
+                    
                     # 添加中文第一行
                     filter_chain.append(
-                        f"drawtext=text='{cn_first_line}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"drawtext=text='{cn_first_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
                         f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=3:box=0"
                     )
                     
                     # 添加中文第二行
                     filter_chain.append(
-                        f"drawtext=text='{cn_second_line}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"drawtext=text='{cn_second_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
                         f"x=(w-text_w)/2:y=1220-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=3:box=0"
                     )
                 else:
                     # 中文行 - 位置在底部区域的下半部分
                     filter_chain.append(
-                        f"drawtext=text='{chinese_text}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
+                        f"drawtext=text='{chinese_text_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
                         f"x=(w-text_w)/2:y=1200-text_h/2:fontfile='{douyin_font}':"
                         f"bordercolor=black:borderw=3:box=0"
                     )
             
             # 如果只有一行文本，居中显示
             if len(text_lines) == 1 and not (len(text_lines[0]) > 30):
+                text_escaped = escape_text(text_lines[0])
                 filter_chain.append(
-                    f"drawtext=text='{text_lines[0]}':fontcolor=#FFFF00:fontsize=36:"
+                    f"drawtext=text='{text_escaped}':fontcolor=#FFFF00:fontsize=36:"
                     f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
                     f"bordercolor=black:borderw=4:box=0"
                 )
         
         # 第5步：如果提供了重点单词信息，添加单词展示区域
         if keyword_text and isinstance(keyword_text, dict):
-            # 获取单词信息
-            word = keyword_text.get('word', '')
-            phonetic = keyword_text.get('phonetic', '')
-            meaning = keyword_text.get('meaning', '')
+            # 获取单词信息并转义
+            word = escape_text(keyword_text.get('word', ''))
+            phonetic = escape_text(keyword_text.get('phonetic', ''))
+            meaning = escape_text(keyword_text.get('meaning', ''))
             
             if word:
                 # 字体大小设置
@@ -326,15 +351,15 @@ class VideoSubtitleBurner:
                 
                 # 根据单词长度调整宽度
                 # 更精确地估算字符宽度（考虑更新的字体大小）
-                word_width = len(word) * 48      # 128px字体下英文字符约48像素
-                meaning_width = len(meaning) * 36 if meaning else 0   # 64px字体下中文字符约36像素
-                phonetic_width = len(phonetic) * 10 if phonetic else 0  # 26px字体下音标字符约10像素
+                word_width = len(keyword_text.get('word', '')) * 44      # 128px字体下英文字符约48像素
+                meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 64px字体下中文字符约36像素
+                phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 26px字体下音标字符约10像素
                 
                 # 取最宽的文本长度
                 max_text_len = max(word_width, meaning_width, phonetic_width)
                 
                 # 计算宽度，使用更小的内边距
-                padding_x = 40  # 左右各20像素的内边距
+                padding_x = 80  # 左右各20像素的内边距
                 rect_width = max(250, min(max_text_len + padding_x, 700))
                 center_x = 360  # 屏幕中心水平坐标
                 rect_x = center_x - rect_width/2
@@ -368,7 +393,10 @@ class VideoSubtitleBurner:
                 if phonetic:
                     filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=black:fontsize={phonetic_fontsize}:x={center_x}-text_w/2:y={phonetic_y}:fontfile='{douyin_font}'")
         
-        return ','.join(filter_chain)
+        # 最后，对整个滤镜字符串进行额外检查，确保没有未转义的特殊字符
+        filter_str = ','.join(filter_chain)
+        LOG.debug(f"生成的滤镜字符串: {filter_str}")
+        return filter_str
     
     def burn_video_with_keywords(self, 
                                 input_video: str, 
@@ -406,99 +434,176 @@ class VideoSubtitleBurner:
                 progress_callback(f"📊 共 {len(burn_data)} 条字幕，其中 {len(keyword_segments)} 条有重点单词")
             
             # 处理每个字幕段落
+            successfully_processed_segments = []  # 跟踪成功处理的片段
+            failed_segments = []  # 跟踪失败的片段
+            
             for i, item in enumerate(burn_data):
-                # LOG.info(f"item: {item}")
-                if progress_callback and i % 10 == 0:  # 每处理10个字幕更新一次进度
+                try:
+                    # 记录开始处理此片段
+                    LOG.info(f"开始处理第 {i+1}/{len(burn_data)} 个字幕片段")
+                    
+                    if progress_callback and i % 10 == 0:  # 每处理10个字幕更新一次进度
+                        if item['has_keyword']:
+                            progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}: 关键词 {item['keyword']}")
+                        else:
+                            progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}")
+                    
+                    # 构建底部字幕文本（英文+中文）
+                    bottom_text = ""
+                    if item['english_text']:
+                        bottom_text = item['english_text']
+                    if item['chinese_text']:
+                        if bottom_text:
+                            bottom_text += "\n"
+                        bottom_text += item['chinese_text']
+                    
+                    # 提取时间段
+                    start_time = item['begin_time']
+                    end_time = item['end_time']
+                    
+                    # 检查时间段是否有效
+                    if end_time <= start_time:
+                        LOG.warning(f"片段 {i} 的时间段无效: {start_time}-{end_time}，尝试修复")
+                        # 修复时间段，确保至少有0.1秒长度
+                        end_time = start_time + 0.1
+                    
+                    duration = end_time - start_time
+                    LOG.info(f"片段 {i}: 时间 {start_time:.2f}-{end_time:.2f}, 时长: {duration:.2f}秒")
+                    
+                    # 为当前时间段创建临时文件名
+                    # 第一步：原视频裁剪后的临时文件
+                    temp_segment_path = os.path.join(self.temp_dir, f"temp_segment_{i}.mp4")
+                    # 第二步：添加字幕和关键词后的临时文件
+                    processed_segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    
+                    # 裁剪当前时间段的视频
+                    segment_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', input_video,
+                        '-ss', str(start_time),
+                        '-to', str(end_time),
+                        '-c:v', 'libx264', '-c:a', 'aac',
+                        '-vsync', '2',  # 保持视频同步
+                        temp_segment_path
+                    ]
+                    
+                    LOG.info(f"执行裁剪命令: {' '.join(segment_cmd)}")
+                    
+                    # 执行裁剪命令
+                    proc = subprocess.Popen(
+                        segment_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        universal_newlines=True
+                    )
+                    stdout, stderr = proc.communicate()
+                    
+                    # 检查裁剪是否成功
+                    if proc.returncode != 0:
+                        LOG.error(f"片段 {i} 裁剪失败: {stderr}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    # 验证裁剪后的文件是否存在且有效
+                    if not os.path.exists(temp_segment_path) or os.path.getsize(temp_segment_path) == 0:
+                        LOG.error(f"片段 {i} 裁剪后的文件无效: {temp_segment_path}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    LOG.info(f"片段 {i} 裁剪成功: {temp_segment_path}")
+                    
+                    # 构建关键词信息（如果有）
+                    keyword_info = None
                     if item['has_keyword']:
-                        progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}: 关键词 {item['keyword']}")
-                    else:
-                        progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}")
-                
-                # 构建底部字幕文本（英文+中文）
-                bottom_text = ""
-                if item['english_text']:
-                    bottom_text = item['english_text']
-                if item['chinese_text']:
-                    if bottom_text:
-                        bottom_text += "\n"
-                    bottom_text += item['chinese_text']
-                
-                # 提取时间段
-                start_time = item['begin_time']
-                end_time = item['end_time']
-                
-                # 为当前时间段创建临时文件名
-                # 第一步：原视频裁剪后的临时文件
-                temp_segment_path = os.path.join(self.temp_dir, f"temp_segment_{i}.mp4")
-                # 第二步：添加字幕和关键词后的临时文件
-                processed_segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
-                
-                # 裁剪当前时间段的视频
-                segment_cmd = [
-                    'ffmpeg', '-y',
-                    '-i', input_video,
-                    '-ss', str(start_time),
-                    '-to', str(end_time),
-                    '-c:v', 'libx264', '-c:a', 'aac',
-                    '-vsync', '2',  # 保持视频同步
-                    temp_segment_path
-                ]
-                
-                if progress_callback and i % 5 == 0:  # 减少日志频率
-                    LOG.info(f"裁剪视频片段 {i+1}/{len(burn_data)}: {start_time:.2f}-{end_time:.2f}")
-                
-                # 执行裁剪命令
-                proc = subprocess.Popen(
-                    segment_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    universal_newlines=True
-                )
-                proc.communicate()
-                
-                # 构建关键词信息（如果有）
-                keyword_info = None
-                if item['has_keyword']:
-                    keyword_info = {
-                        'word': item['keyword'],
-                        'phonetic': item['phonetic'],
-                        'meaning': item['explanation']
-                    }
-                
-                # 为当前片段应用视频滤镜
-                video_filter = self._build_video_filter(title_text, bottom_text, keyword_info)
-                
-                process_cmd = [
-                    'ffmpeg', '-y',
-                    '-i', temp_segment_path,
-                    '-vf', video_filter,
-                    '-aspect', '9:16',  # 设置宽高比为9:16
-                    '-c:a', 'copy',  # 音频直接复制
-                    '-preset', 'medium',
-                    '-crf', '23',
-                    processed_segment_path
-                ]
-                
-                # 执行处理命令
-                proc = subprocess.Popen(
-                    process_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    universal_newlines=True
-                )
-                proc.communicate()
+                        keyword_info = {
+                            'word': item['keyword'],
+                            'phonetic': item['phonetic'],
+                            'meaning': item['explanation']
+                        }
+                    
+                    # 为当前片段应用视频滤镜
+                    video_filter = self._build_video_filter(title_text, bottom_text, keyword_info)
+                    
+                    process_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', temp_segment_path,
+                        '-vf', video_filter,
+                        '-aspect', '9:16',  # 设置宽高比为9:16
+                        '-c:a', 'copy',  # 音频直接复制
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        processed_segment_path
+                    ]
+                    
+                    LOG.info(f"执行处理命令: {' '.join(process_cmd)}")
+                    
+                    # 执行处理命令
+                    proc = subprocess.Popen(
+                        process_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        universal_newlines=True
+                    )
+                    stdout, stderr = proc.communicate()
+                    
+                    # 检查处理是否成功
+                    if proc.returncode != 0:
+                        LOG.error(f"片段 {i} 处理失败: {stderr}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    # 验证处理后的文件是否存在且有效
+                    if not os.path.exists(processed_segment_path) or os.path.getsize(processed_segment_path) == 0:
+                        LOG.error(f"片段 {i} 处理后的文件无效: {processed_segment_path}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    LOG.info(f"片段 {i} 处理成功: {processed_segment_path}")
+                    successfully_processed_segments.append(i)
+                    
+                except Exception as e:
+                    LOG.error(f"处理片段 {i} 时发生异常: {str(e)}")
+                    import traceback
+                    LOG.error(traceback.format_exc())
+                    failed_segments.append(i)
+                    continue
+            
+            # 报告处理结果
+            LOG.info(f"成功处理 {len(successfully_processed_segments)}/{len(burn_data)} 个片段")
+            if failed_segments:
+                LOG.warning(f"失败片段索引: {failed_segments}")
+            
+            # 只处理成功的片段
+            if not successfully_processed_segments:
+                if progress_callback:
+                    progress_callback("❌ 没有成功处理的片段，无法生成视频")
+                return False
             
             # 创建包含所有处理过的片段的文件列表
             segments_list_path = os.path.join(self.temp_dir, "segments.txt")
-            LOG.info(f"segments_list_path: {segments_list_path}")
+            LOG.info(f"创建片段列表文件: {segments_list_path}")
+            
             with open(segments_list_path, 'w') as f:
-                for i in range(len(burn_data)):
+                for i in successfully_processed_segments:
                     segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
-                    # 使用绝对路径，确保ffmpeg能找到文件
-                    abs_segment_path = os.path.abspath(segment_path)
-                    # 需要特殊处理路径中的单引号，替换为\'
-                    escaped_path = abs_segment_path.replace("'", "\\'")
-                    f.write(f"file '{escaped_path}'\n")
+                    # 再次验证文件存在
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        # 使用绝对路径，确保ffmpeg能找到文件
+                        abs_segment_path = os.path.abspath(segment_path)
+                        # 需要特殊处理路径中的单引号，替换为\'
+                        escaped_path = abs_segment_path.replace("'", "\\'")
+                        f.write(f"file '{escaped_path}'\n")
+                        LOG.info(f"添加片段到列表: {abs_segment_path}")
+                    else:
+                        LOG.warning(f"跳过无效片段文件: {segment_path}")
+            
+            # 显示segments.txt文件内容用于调试
+            try:
+                with open(segments_list_path, 'r') as f:
+                    content = f.read()
+                    LOG.info(f"segments.txt内容:\n{content}")
+            except Exception as e:
+                LOG.error(f"无法读取segments.txt: {e}")
             
             if progress_callback:
                 progress_callback("🔄 合并所有视频片段...")
@@ -513,6 +618,8 @@ class VideoSubtitleBurner:
                 output_video
             ]
             
+            LOG.info(f"执行合并命令: {' '.join(concat_cmd)}")
+            
             # 执行合并命令
             proc = subprocess.Popen(
                 concat_cmd,
@@ -522,17 +629,94 @@ class VideoSubtitleBurner:
             )
             stdout, stderr = proc.communicate()
             
-            if proc.returncode == 0:
+            # 详细记录stderr以便调试
+            if stderr:
+                LOG.info(f"FFmpeg合并输出: {stderr}")
+            
+            # 检查输出文件
+            if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
                 if progress_callback:
                     progress_callback("✅ 视频烧制完成！")
-                LOG.info(f"✅ 视频烧制成功: {output_video}")
+                LOG.info(f"✅ 视频烧制成功: {output_video}, 大小: {os.path.getsize(output_video)/1024/1024:.2f}MB")
                 return True
             else:
-                error_msg = f"合并视频失败: {stderr}"
+                # 合并失败，尝试替代方案
                 if progress_callback:
-                    progress_callback(f"❌ 烧制失败: {error_msg}")
-                LOG.error(error_msg)
-                return False
+                    progress_callback("⚠️ 标准合并失败，尝试替代方案...")
+                
+                LOG.warning(f"标准合并失败，尝试使用过滤器链方式合并")
+                
+                # 构建过滤器复杂链
+                filter_complex = []
+                for idx, i in enumerate(successfully_processed_segments):
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    # 确保文件存在
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        filter_complex.append(f"[{idx}:v][{idx}:a]")
+                
+                if not filter_complex:
+                    error_msg = "所有片段都无效，无法生成视频"
+                    if progress_callback:
+                        progress_callback(f"❌ {error_msg}")
+                    LOG.error(error_msg)
+                    return False
+                
+                # 构建备用命令
+                inputs = []
+                for i in successfully_processed_segments:
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        inputs.extend(['-i', segment_path])
+                
+                # 如果只有一个片段，直接复制
+                if len(successfully_processed_segments) == 1:
+                    segment_path = os.path.join(self.temp_dir, f"segment_{successfully_processed_segments[0]}.mp4")
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        fallback_cmd = [
+                            'ffmpeg', '-y',
+                            '-i', segment_path,
+                            '-c', 'copy',
+                            output_video
+                        ]
+                else:
+                    # 构建备用命令
+                    filter_str = ''.join(filter_complex) + f"concat=n={len(filter_complex)}:v=1:a=1[outv][outa]"
+                    fallback_cmd = [
+                        'ffmpeg', '-y'
+                    ] + inputs + [
+                        '-filter_complex', filter_str,
+                        '-map', '[outv]',
+                        '-map', '[outa]',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        output_video
+                    ]
+                
+                LOG.info(f"执行备用合并命令: {' '.join(fallback_cmd)}")
+                
+                if progress_callback:
+                    progress_callback("🔄 尝试备用合并方法...")
+                
+                # 执行备用命令
+                proc = subprocess.Popen(
+                    fallback_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                stdout, stderr = proc.communicate()
+                
+                if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
+                    if progress_callback:
+                        progress_callback("✅ 备用方法视频烧制完成！")
+                    LOG.info(f"✅ 备用方法视频烧制成功: {output_video}")
+                    return True
+                else:
+                    error_msg = f"备用合并方法也失败: {stderr}"
+                    if progress_callback:
+                        progress_callback(f"❌ 烧制失败: {error_msg}")
+                    LOG.error(error_msg)
+                    return False
                 
         except Exception as e:
             error_msg = f"视频烧制失败: {str(e)}"
