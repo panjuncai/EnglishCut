@@ -185,6 +185,24 @@ class VideoSubtitleBurner:
         
         # 检查字体路径，优先使用抖音字体，找不到再使用苹方
         douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
+        
+        # 专门用于音标的字体，优先使用支持IPA的字体
+        phonetic_fonts = [
+            '/Users/panjc/Library/Fonts/NotoSans-Regular.ttf',  # Google Noto字体如果已安装
+        ]
+        
+        # 选择一个可用的音标字体
+        phonetic_font = None
+        for font in phonetic_fonts:
+            if os.path.exists(font):
+                phonetic_font = font
+                # LOG.info(f"使用音标字体: {phonetic_font}")
+                break
+        
+        if not phonetic_font:
+            LOG.warning("未找到合适的音标字体，将使用常规字体，可能导致音标显示不完整")
+            phonetic_font = douyin_font  # 如果找不到专用字体，退回到常规字体
+        
         # 备选字体
         system_fonts = [
             '/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc',  # 苹方
@@ -215,8 +233,8 @@ class VideoSubtitleBurner:
             "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
             
             # 第2步：底部区域 - 创建单一浅米色背景
-            # 底部区域从1080像素开始，高度为200像素（适合4行字幕）
-            "drawbox=x=0:y=1080:w=720:h=200:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
+            # 底部区域从1080像素开始，高度为220像素（适合4行字幕）
+            "drawbox=x=0:y=1080:w=720:h=220:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
             
             # 第3步：添加顶部文字（调大白色字体，使用粗体字体文件）
             f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=88:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
@@ -252,21 +270,21 @@ class VideoSubtitleBurner:
                     # 添加英文第一行
                     filter_chain.append(
                         f"drawtext=text='{eng_first_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
-                        f"x=(w-text_w)/2:y=1100-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1100-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=4:box=0"
                     )
                     
                     # 添加英文第二行
                     filter_chain.append(
                         f"drawtext=text='{eng_second_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
-                        f"x=(w-text_w)/2:y=1140-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1140-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=4:box=0"
                     )
                 else:
                     # 英文行 - 位置在底部区域的上半部分
                     filter_chain.append(
                         f"drawtext=text='{english_text_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
-                        f"x=(w-text_w)/2:y=1120-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1120-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=4:box=0"
                     )
             
@@ -298,21 +316,21 @@ class VideoSubtitleBurner:
                     # 添加中文第一行
                     filter_chain.append(
                         f"drawtext=text='{cn_first_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1180-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
                     
                     # 添加中文第二行
                     filter_chain.append(
                         f"drawtext=text='{cn_second_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1220-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1220-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
                 else:
                     # 中文行 - 位置在底部区域的下半部分
                     filter_chain.append(
                         f"drawtext=text='{chinese_text_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1200-text_h/2:fontfile='{douyin_font}':"
+                        f"x=(w-text_w)/2:y=1200-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
             
@@ -321,7 +339,7 @@ class VideoSubtitleBurner:
                 text_escaped = escape_text(text_lines[0])
                 filter_chain.append(
                     f"drawtext=text='{text_escaped}':fontcolor=#FFFF00:fontsize=36:"
-                    f"x=(w-text_w)/2:y=1180-text_h/2:fontfile='{douyin_font}':"
+                    f"x=(w-text_w)/2:y=1180-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                     f"bordercolor=black:borderw=4:box=0"
                 )
         
@@ -334,63 +352,94 @@ class VideoSubtitleBurner:
             
             if word:
                 # 字体大小设置 - 根据单词长度自适应调整
-                # 短单词用大字体(116px)，长单词用小字体(64px)
+                # 短单词用大字体，长单词用小字体
                 original_word = keyword_text.get('word', '')
-                if len(original_word) > 10:  # 超过8个字母就用小字体
+                if len(original_word) > 10:  # 超过10个字母就用小字体
                     word_fontsize = 64     # 较长单词使用较小字体
                 else:
-                    word_fontsize = 116    # 短单词使用大字体
+                    word_fontsize = 152    # 短单词使用更大字体
                 
                 meaning_fontsize = 48   # 中文释义字体大小 - 中文中字
-                phonetic_fontsize = 26  # 音标字体大小 - 音标小字
+                phonetic_fontsize = 24  # 音标字体大小 - 音标小字
                 
                 # 计算文本垂直位置和行间距
-                base_y = 830  # 矩形框顶部Y坐标，从900调整到830，往上移
-                line_height_1 = 110  # 第一行(英文大字)到第二行(中文小字)的行高
-                line_height_2 = 60   # 第二行(中文小字)到第三行(音标小字)的行高
+                # 根据单词长度调整垂直位置
+                if len(original_word) > 10:
+                    base_y = 800  # 矩形框顶部Y坐标
+                else:  # 短单词
+                    base_y = 750  # 短单词时矩形框整体上移50像素，避免与底部重叠
+                    
+                line_height_1 = 150  # 第一行(英文大字)到第二行(中文小字)的行高，增加高度以适应更大字体
+                line_height_2 = 70   # 第二行(中文小字)到第三行(音标小字)的行高
                 padding_y = 30  # 垂直内边距
                 
                 # 计算三行文本的垂直位置 - 如果是小字体，调整Y坐标
                 word_y = base_y + padding_y
                 if len(original_word) > 10:
-                    word_y += 15  # 长单词小字体时，适当下移以居中
+                    word_y -= 10  # 长单词时整体上移10像素
                 
-                meaning_y = word_y + line_height_1
-                phonetic_y = meaning_y + line_height_2
+                # 根据单词长度调整行间距
+                if len(original_word) > 10:
+                    # 长单词时，减小行间距使布局更紧凑
+                    adjusted_line_height_1 = 90  # 减小第一行到第二行的距离
+                    adjusted_line_height_2 = 60  # 减小第二行到第三行的距离
+                else:
+                    # 短单词时使用正常行间距
+                    adjusted_line_height_1 = line_height_1
+                    adjusted_line_height_2 = line_height_2
+                
+                # 计算中文和音标位置（根据单词长度调整）
+                meaning_y = word_y + adjusted_line_height_1
+                phonetic_y = meaning_y + adjusted_line_height_2
                 
                 # 根据单词长度调整宽度和估算字符宽度
                 if len(original_word) > 10:
                     # 小字体(64px)下的估算宽度
                     word_width = len(original_word) * 30  # 64px字体下英文字符约30像素
                 else:
-                    # 大字体(116px)下的估算宽度
-                    word_width = len(original_word) * 48  # 116px字体下英文字符约48像素
+                    # 大字体(152px)下的估算宽度
+                    word_width = len(original_word) * 60  # 152px字体下英文字符约60像素
                 
                 meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 48px字体下中文字符约36像素
-                phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 26px字体下音标字符约10像素
+                phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 24px字体下音标字符约10像素
                 
                 # 取最宽的文本长度
                 max_text_len = max(word_width, meaning_width, phonetic_width)
                 
                 # 计算宽度，确保有足够边距
-                padding_x = 80  # 左右各40像素的内边距，增加以确保长单词也能显示
-                rect_width = max(300, min(max_text_len + padding_x, 700))
+                padding_x = 100  # 左右各50像素的内边距，增加以确保更大字体有足够空间
+                rect_width = max(350, min(max_text_len + padding_x, 700))
                 center_x = 360  # 屏幕中心水平坐标
                 rect_x = center_x - rect_width/2
                 
                 # 计算矩形高度，考虑不同行高
                 if meaning and phonetic:
-                    # 全部三行
-                    rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 10
+                    if len(original_word) > 10:
+                        # 长单词情况下，三行内容需要更多空间
+                        rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + padding_y + 20
+                    else:
+                        # 短单词+大字体情况下使用更大的高度
+                        rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 30
                 elif meaning:
-                    # 两行：单词+中文
-                    rect_height = padding_y + line_height_1 + padding_y
+                    if len(original_word) > 10:
+                        # 长单词+中文释义情况
+                        rect_height = padding_y + adjusted_line_height_1 + padding_y
+                    else:
+                        # 短单词+大字体+中文释义情况
+                        rect_height = padding_y + line_height_1 + padding_y + 20
                 elif phonetic:
-                    # 两行：单词+音标
-                    rect_height = padding_y + line_height_1 + padding_y
+                    if len(original_word) > 10:
+                        # 长单词+音标情况
+                        rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + 20
+                    else:
+                        # 短单词+大字体+音标情况
+                        rect_height = padding_y + line_height_1 + line_height_2 + 30
                 else:
                     # 只有单词一行
-                    rect_height = padding_y + 90 + padding_y  # 单词行高设为90
+                    if len(original_word) > 10:
+                        rect_height = padding_y + 90 + padding_y  # 长单词行高
+                    else:
+                        rect_height = padding_y + 120 + padding_y  # 短单词大字体行高
                 
                 # 添加亮黄色背景框 - 使用亮黄色 #FFFF00
                 filter_chain.append(f"drawbox=x={rect_x}:y={base_y}:w={rect_width}:h={rect_height}:color=#FFFF00@1.0:t=fill")
@@ -405,11 +454,11 @@ class VideoSubtitleBurner:
                 
                 # 如果有音标，添加音标文本
                 if phonetic:
-                    filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=black:fontsize={phonetic_fontsize}:x={center_x}-text_w/2:y={phonetic_y}:fontfile='{douyin_font}'")
+                    filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=black:fontsize={phonetic_fontsize}:x={center_x}-text_w/2:y={phonetic_y}:fontfile='{phonetic_font}'")
         
         # 最后，对整个滤镜字符串进行额外检查，确保没有未转义的特殊字符
         filter_str = ','.join(filter_chain)
-        LOG.debug(f"生成的滤镜字符串: {filter_str}")
+        # LOG.debug(f"生成的滤镜字符串: {filter_str}")
         return filter_str
     
     def burn_video_with_keywords(self, 
@@ -524,7 +573,7 @@ class VideoSubtitleBurner:
                         failed_segments.append(i)
                         continue
                     
-                    LOG.info(f"片段 {i} 裁剪成功: {temp_segment_path}")
+                    # LOG.info(f"片段 {i} 裁剪成功: {temp_segment_path}")
                     
                     # 构建关键词信息（如果有）
                     keyword_info = None
@@ -549,7 +598,7 @@ class VideoSubtitleBurner:
                         processed_segment_path
                     ]
                     
-                    LOG.info(f"执行处理命令: {' '.join(process_cmd)}")
+                    # LOG.info(f"执行处理命令: {' '.join(process_cmd)}")
                     
                     # 执行处理命令
                     proc = subprocess.Popen(
@@ -572,7 +621,7 @@ class VideoSubtitleBurner:
                         failed_segments.append(i)
                         continue
                     
-                    LOG.info(f"片段 {i} 处理成功: {processed_segment_path}")
+                    # LOG.info(f"片段 {i} 处理成功: {processed_segment_path}")
                     successfully_processed_segments.append(i)
                     
                 except Exception as e:
@@ -632,7 +681,7 @@ class VideoSubtitleBurner:
                 output_video
             ]
             
-            LOG.info(f"执行合并命令: {' '.join(concat_cmd)}")
+            # LOG.info(f"执行合并命令: {' '.join(concat_cmd)}")
             
             # 执行合并命令
             proc = subprocess.Popen(
@@ -644,8 +693,8 @@ class VideoSubtitleBurner:
             stdout, stderr = proc.communicate()
             
             # 详细记录stderr以便调试
-            if stderr:
-                LOG.info(f"FFmpeg合并输出: {stderr}")
+            # if stderr:
+            #     LOG.info(f"FFmpeg合并输出: {stderr}")
             
             # 检查输出文件
             if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
@@ -740,7 +789,7 @@ class VideoSubtitleBurner:
             return False
         finally:
             pass
-            # # 清理临时文件
+            # 清理临时文件
             # try:
             #     # 清理临时视频文件
             #     for i in range(len(burn_data)):
