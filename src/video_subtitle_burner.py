@@ -233,8 +233,8 @@ class VideoSubtitleBurner:
             "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
             
             # 第2步：底部区域 - 创建单一浅米色背景
-            # 底部区域从1080像素开始，高度为220像素（适合4行字幕）
-            "drawbox=x=0:y=1080:w=720:h=220:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
+            # 底部区域从1080像素开始，高度为270像素（适合最多5行字幕：3行英文+2行中文）
+            "drawbox=x=0:y=1070:w=720:h=270:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
             
             # 第3步：添加顶部文字（调大白色字体，使用粗体字体文件）
             f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=88:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
@@ -251,15 +251,81 @@ class VideoSubtitleBurner:
                 english_text = text_lines[0]
                 english_text_escaped = escape_text(english_text)
                 
-                # 判断英文是否过长需要分行（超过30个字符就分行）
+                # 判断英文是否过长需要分行（基于字符数判断）
                 eng_fontsize = 36
-                if len(english_text) > 30:
+                if len(english_text) > 45:  # 如果超过45个字符，分为三行
+                    # 尝试更智能地分割句子
+                    words = english_text.split(' ')
+                    total_words = len(words)
+                    
+                    # 计算每行大约的单词数
+                    words_per_line = total_words // 3
+                    
+                    # 确保第一行和第二行的结束位置在合理的位置（句子中间的空格）
+                    first_line_end = words_per_line
+                    second_line_end = words_per_line * 2
+                    
+                    # 微调分割点，尽量在标点或句子自然断点处分行
+                    # 第一行分割点调整
+                    for i in range(first_line_end-3, first_line_end+3):
+                        if 0 <= i < total_words and i < second_line_end-5:
+                            word = words[i]
+                            if word.endswith(('.', ',', ';', ':', '?', '!')):
+                                first_line_end = i + 1
+                                break
+                    
+                    # 第二行分割点调整
+                    for i in range(second_line_end-3, second_line_end+3):
+                        if first_line_end < i < total_words:
+                            word = words[i]
+                            if word.endswith(('.', ',', ';', ':', '?', '!')):
+                                second_line_end = i + 1
+                                break
+                    
+                    eng_first_line = ' '.join(words[:first_line_end])
+                    eng_second_line = ' '.join(words[first_line_end:second_line_end])
+                    eng_third_line = ' '.join(words[second_line_end:])
+                    
+                    eng_first_line_escaped = escape_text(eng_first_line)
+                    eng_second_line_escaped = escape_text(eng_second_line)
+                    eng_third_line_escaped = escape_text(eng_third_line)
+                    
+                    # 添加英文第一行
+                    # -10 是上移10像素
+                    filter_chain.append(
+                        f"drawtext=text='{eng_first_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1110-text_h/2-10:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+                    
+                    # 添加英文第二行
+                    filter_chain.append(
+                        f"drawtext=text='{eng_second_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1150-text_h/2-10:fontfile='{douyin_font}':"
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+                    
+                    # 添加英文第三行
+                    filter_chain.append(
+                        f"drawtext=text='{eng_third_line_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
+                        f"x=(w-text_w)/2:y=1170-text_h/2+5:fontfile='{douyin_font}':"  # Y坐标从1160调整到1170
+                        f"bordercolor=black:borderw=4:box=0"
+                    )
+                    
+                elif len(english_text) > 30:  # 如果超过30个字符，分为两行
                     # 找到适合分行的位置（句子中间的空格）
                     words = english_text.split(' ')
                     total_words = len(words)
                     half_point = total_words // 2
                     
-                    # 找到接近中点的空格位置
+                    # 找到接近中点的空格位置，尽量在标点或句子自然断点处分行
+                    for i in range(half_point-3, half_point+3):
+                        if 0 <= i < total_words:
+                            word = words[i]
+                            if word.endswith(('.', ',', ';', ':', '?', '!')):
+                                half_point = i + 1
+                                break
+                    
                     eng_first_line = ' '.join(words[:half_point])
                     eng_second_line = ' '.join(words[half_point:])
                     
@@ -284,7 +350,7 @@ class VideoSubtitleBurner:
                     # 英文行 - 位置在底部区域的上半部分
                     filter_chain.append(
                         f"drawtext=text='{english_text_escaped}':fontcolor=#FFFF00:fontsize={eng_fontsize}:"
-                        f"x=(w-text_w)/2:y=1120-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
+                        f"x=(w-text_w)/2:y=1130-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标从1120调整到1130
                         f"bordercolor=black:borderw=4:box=0"
                     )
             
@@ -293,8 +359,18 @@ class VideoSubtitleBurner:
                 chinese_text = text_lines[1]
                 chinese_text_escaped = escape_text(chinese_text)
                 
-                # 判断中文是否过长需要分行（超过15个汉字就分行）
+                # 确定中文字幕的垂直位置（根据英文的行数调整）
                 cn_fontsize = 32
+                
+                # 根据英文行数动态调整中文位置
+                if len(english_text) > 45:  # 三行英文
+                    cn_base_y = 1210  # 从1240(1200+40)调整到1210，上移30像素
+                elif len(english_text) > 30:  # 两行英文
+                    cn_base_y = 1190  # 从1200调整到1190，上移10像素
+                else:  # 单行英文
+                    cn_base_y = 1180  # 从1200调整到1180，上移20像素
+                
+                # 判断中文是否过长需要分行（超过15个汉字就分行）
                 if len(chinese_text) > 15:
                     # 尽量在中间位置分行
                     half_point = len(chinese_text) // 2
@@ -313,24 +389,24 @@ class VideoSubtitleBurner:
                     cn_first_line_escaped = escape_text(cn_first_line)
                     cn_second_line_escaped = escape_text(cn_second_line)
                     
-                    # 添加中文第一行
+                    # 添加中文第一行（根据英文行数调整位置）
                     filter_chain.append(
                         f"drawtext=text='{cn_first_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1180-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
+                        f"x=(w-text_w)/2:y={cn_base_y}-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
                     
                     # 添加中文第二行
                     filter_chain.append(
                         f"drawtext=text='{cn_second_line_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1220-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
+                        f"x=(w-text_w)/2:y={cn_base_y+40}-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
                 else:
-                    # 中文行 - 位置在底部区域的下半部分
+                    # 中文行 - 位置在底部区域的下半部分（根据英文行数调整）
                     filter_chain.append(
                         f"drawtext=text='{chinese_text_escaped}':fontcolor=#FFFF00:fontsize={cn_fontsize}:"
-                        f"x=(w-text_w)/2:y=1200-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
+                        f"x=(w-text_w)/2:y={cn_base_y}-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
             
