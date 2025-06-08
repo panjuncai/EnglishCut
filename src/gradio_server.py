@@ -476,12 +476,14 @@ def create_main_interface():
                     file_name = os.path.basename(actual_file_path)
                     processed_path = result.get('processed_video_path', '')
                     processed_name = os.path.basename(processed_path)
+                    video_duration = result.get('duration', 0)
                     
                     return (
                         f"""### ✅ 上传成功
 - **原始文件**: {file_name}
 - **处理后文件**: {processed_name}
 - **保存位置**: {processed_path}
+- **视频时长**: {video_duration:.2f} 秒
 - **状态**: 已保存到数据库
                         """,
                         f"""## ℹ️ 系统状态

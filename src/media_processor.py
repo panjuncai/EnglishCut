@@ -62,23 +62,28 @@ class MediaProcessor:
             
             # 视频预处理
             processed_video_path = None
+            video_duration = 0
             if file_info['type'] == 'video' and not skip_preprocess:
                 # 进行9:16裁剪
-                processed_video_path = self._preprocess_video_to_9_16(file_path, file_info['name'])
-                if processed_video_path:
-                    LOG.info(f"✅ 视频已预处理为9:16格式: {processed_video_path}")
+                preprocess_result = self._preprocess_video_to_9_16(file_path, file_info['name'])
+                if preprocess_result:
+                    processed_video_path = preprocess_result['path']
+                    video_duration = preprocess_result['duration']
+                    LOG.info(f"✅ 视频已预处理为9:16格式: {processed_video_path}, 时长: {video_duration}秒")
                 else:
                     LOG.warning("⚠️ 9:16预处理失败，将使用原始视频继续")
             
             # 如果只需要预处理，那么在这里就返回结果
             if only_preprocess:
-                # 保存到数据库
-                self._save_to_database(file_info, {}, {}, False, processed_video_path)
+                # 保存到数据库，传递带有duration的字典
+                duration_info = {'audio_duration': video_duration}
+                self._save_to_database(file_info, duration_info, {}, False, processed_video_path)
                 
                 return {
                     'success': True,
                     'file_type': file_info['type'],
                     'processed_video_path': processed_video_path,
+                    'duration': video_duration,
                     'message': '视频预处理完成'
                 }
             
@@ -147,7 +152,7 @@ class MediaProcessor:
         - video_name: 视频名称
         
         返回:
-        - str: 处理后的视频路径，失败返回None
+        - dict: 包含处理后视频路径和视频时长的字典，失败返回None
         """
         try:
             # 检查ffmpeg是否可用
@@ -167,6 +172,26 @@ class MediaProcessor:
             output_path = os.path.abspath(rel_output_path)
             
             LOG.info(f"🔄 开始对视频进行9:16比例预处理: {video_path}")
+            
+            # 首先获取视频时长
+            duration = 0
+            try:
+                import subprocess
+                cmd = [
+                    'ffprobe', 
+                    '-v', 'error', 
+                    '-show_entries', 'format=duration', 
+                    '-of', 'default=noprint_wrappers=1:nokey=1', 
+                    video_path
+                ]
+                result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result.returncode == 0:
+                    duration = float(result.stdout.strip())
+                    LOG.info(f"✅ 获取视频时长成功: {duration} 秒")
+                else:
+                    LOG.warning(f"⚠️ 获取视频时长失败: {result.stderr}")
+            except Exception as e:
+                LOG.error(f"❌ 获取视频时长出错: {str(e)}")
             
             # 使用ffmpeg对视频进行9:16处理，应用pre_process.py中的处理逻辑
             # 从原视频中央挖出9:16比例的部分，忽略底部1/5的广告字幕
@@ -192,7 +217,10 @@ class MediaProcessor:
             
             if process.returncode == 0:
                 LOG.info(f"✅ 视频9:16预处理成功: {output_path}")
-                return output_path
+                return {
+                    'path': output_path,
+                    'duration': duration
+                }
             else:
                 LOG.error(f"❌ 视频9:16预处理失败: {stderr}")
                 return None
