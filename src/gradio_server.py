@@ -39,7 +39,7 @@ def load_video_list():
             # 返回空列表
             return []
         
-        LOG.info(f"查询到 {len(series_list)} 条系列数据")
+        # LOG.info(f"查询到 {len(series_list)} 条系列数据")
         
         # 准备下拉选项 - Gradio需要这种格式的选项列表
         options = []
@@ -52,14 +52,14 @@ def load_video_list():
                 # 如果文件存在，包含完整信息
                 option = f"{series['id']}-{series['name']}-{path}"
                 options.append(option)
-                LOG.info(f"添加有效视频选项: ID={series['id']}, 名称={series['name']}, 路径={path}")
+                # LOG.info(f"添加有效视频选项: ID={series['id']}, 名称={series['name']}, 路径={path}")
             else:
                 # 如果文件不存在，只包含ID和名称
                 option = f"{series['id']}-{series['name']}"
                 options.append(option)
-                LOG.info(f"添加ID-名称选项(无路径): ID={series['id']}, 名称={series['name']}")
+                # LOG.info(f"添加ID-名称选项(无路径): ID={series['id']}, 名称={series['name']}")
         
-        LOG.info(f"生成了 {len(options)} 个下拉选项")
+        # LOG.info(f"生成了 {len(options)} 个下拉选项")
         
         # 为调试输出前5个选项
         for i, option in enumerate(options[:5]):
@@ -95,9 +95,9 @@ def load_subtitle_videos():
             if subtitles:
                 option_text = f"{series['id']}-{series['name']} (字幕数: {len(subtitles)})"
                 options.append(option_text)
-                LOG.info(f"添加带字幕的选项: {option_text}")
+                # LOG.info(f"添加带字幕的选项: {option_text}")
         
-        LOG.info(f"生成了 {len(options)} 个带字幕的下拉选项")
+        # LOG.info(f"生成了 {len(options)} 个带字幕的下拉选项")
         
         # 如果没有带字幕的视频，返回所有视频
         if not options:
@@ -144,8 +144,8 @@ def create_main_interface():
     video_list = load_video_list()
     subtitle_videos = load_subtitle_videos()
 
-    LOG.info(f"初始视频列表: {video_list}")
-    LOG.info(f"初始字幕视频列表: {subtitle_videos}")
+    # LOG.info(f"初始视频列表: {video_list}")
+    # LOG.info(f"初始字幕视频列表: {subtitle_videos}")
 
     with gr.Blocks(title="视频处理工作流", theme=gr.themes.Soft()) as interface:
         gr.Markdown("# 🎬 视频处理工作流")
@@ -207,7 +207,7 @@ def create_main_interface():
                     # 字幕生成选项卡
                     with gr.TabItem("🎙️ 生成字幕"):
                         with gr.Row():
-                            with gr.Column():
+                            with gr.Column(scale=3):
                                 with gr.Row():
                                     # 选择视频下拉框
                                     video_dropdown = gr.Dropdown(
@@ -216,29 +216,26 @@ def create_main_interface():
                                         value=None,
                                         interactive=True
                                     )
+                                    
+                                    # 添加刷新按钮
+                                    refresh_videos_btn = gr.Button(
+                                        "🔄 刷新列表",
+                                        variant="secondary",
+                                        size="sm"
+                                    )
                                 
-                            with gr.Row():
-                                # 字幕选项
-                                translation_checkbox = gr.Checkbox(
-                                    label="🌐 启用中文翻译",
-                                    value=True,
-                                )
-                                
-                                short_subtitle_checkbox = gr.Checkbox(
-                                    label="📱 短视频字幕模式",
-                                    value=False,
-                                )
-                            
-                            # 添加刷新按钮
-                            refresh_videos_btn = gr.Button(
-                                "🔄 刷新视频列表",
-                                variant="secondary",
-                                size="sm"
-                            )
-                            generate_button = gr.Button(
-                                "🎬 生成字幕",
-                                variant="primary"
-                            )
+                                with gr.Row():
+                                    # 字幕选项
+                                    translation_checkbox = gr.Checkbox(
+                                        label="🌐 启用中文翻译",
+                                        value=True,
+                                    )
+                                    
+                                    generate_button = gr.Button(
+                                        "🎬 生成字幕",
+                                        variant="primary",
+                                        size="lg"
+                                    )
                         
                         with gr.Row():
                             with gr.Column():
@@ -256,18 +253,21 @@ def create_main_interface():
                                 )
                         
                         # 字幕内容预览
-                        subtitle_preview = gr.Textbox(
-                            label="🎬 字幕预览",
-                            lines=8,
-                            placeholder="生成的字幕内容将在这里预览..."
-                        )
+                        with gr.Row():
+                            with gr.Column():
+                                subtitle_preview = gr.Textbox(
+                                    label="🎬 字幕预览",
+                                    lines=8,
+                                    placeholder="生成的字幕内容将在这里预览..."
+                                )
                         
-                        subtitle_gen_result = gr.Markdown("### 处理结果\n等待生成...")
+                        with gr.Row():
+                            subtitle_gen_result = gr.Markdown("### 处理结果\n等待生成...")
                     
                     # 上传字幕选项卡
                     with gr.TabItem("📑 上传字幕"):
                         with gr.Row():
-                            with gr.Column(scale=2):
+                            with gr.Column(scale=3):
                                 with gr.Row():
                                     # 选择视频
                                     video_dropdown_upload = gr.Dropdown(
@@ -279,25 +279,28 @@ def create_main_interface():
                                     
                                     # 添加刷新按钮
                                     refresh_videos_upload_btn = gr.Button(
-                                        "🔄 刷新视频列表",
+                                        "🔄 刷新列表",
                                         variant="secondary",
                                         size="sm"
                                     )
                                 
-                            # 上传字幕文件
-                            subtitle_file_input = gr.File(
-                                label="📝 上传SRT字幕文件",
-                                file_types=[".srt"],
-                                type="filepath"
-                            )
-                            
-                            subtitle_upload_btn = gr.Button(
-                                "📤 上传字幕",
-                                variant="primary"
-                            )
+                                with gr.Row():
+                                    # 上传字幕文件
+                                    subtitle_file_input = gr.File(
+                                        label="📝 上传SRT字幕文件",
+                                        file_types=[".srt"],
+                                        type="filepath"
+                                    )
+                                
+                                with gr.Row():
+                                    subtitle_upload_btn = gr.Button(
+                                        "📤 上传字幕",
+                                        variant="primary",
+                                        size="lg"
+                                    )
                         
-                            with gr.Column(scale=1):
-                                subtitle_upload_result = gr.Markdown("### 上传结果\n等待上传...")
+                        with gr.Row():
+                            subtitle_upload_result = gr.Markdown("### 上传结果\n等待上传...")
             
             # 步骤3: 关键词AI筛查提取
             with gr.TabItem("🔑 步骤3: 关键词提取") as tab3:
@@ -466,7 +469,6 @@ def create_main_interface():
                     file_path=actual_file_path,
                     output_format="SRT",
                     enable_translation=False,
-                    enable_short_subtitles=False,
                     only_preprocess=True  # 只进行预处理，不生成字幕
                 )
                 
@@ -499,7 +501,7 @@ def create_main_interface():
                     f"## ℹ️ 系统状态\n处理失败: {str(e)}"
                 )
         
-        def generate_subtitles(video_selection, enable_translation, enable_short_subtitles):
+        def generate_subtitles(video_selection, enable_translation):
             """为选定的视频生成字幕"""
             LOG.info(f"选择的视频: {video_selection}, 类型: {type(video_selection)}")
             
@@ -570,7 +572,6 @@ def create_main_interface():
                     file_path=processed_path,
                     output_format="SRT",
                     enable_translation=enable_translation,
-                    enable_short_subtitles=enable_short_subtitles,
                     skip_preprocess=True  # 跳过预处理，直接生成字幕
                 )
                 
@@ -588,7 +589,6 @@ def create_main_interface():
 - **分段数量**: {result.get('chunks_count', 0)}
 - **处理时间**: {result.get('processing_time', 0):.1f} 秒
 - **双语模式**: {'是' if enable_translation else '否'}
-- **短字幕模式**: {'是' if enable_short_subtitles else '否'}
 """
                     
                     return (
@@ -1147,9 +1147,10 @@ def create_main_interface():
             outputs=[video_dropdown_upload]
         )
         
+        # 绑定生成按钮事件
         generate_button.click(
             generate_subtitles,
-            inputs=[video_dropdown, translation_checkbox, short_subtitle_checkbox],
+            inputs=[video_dropdown, translation_checkbox],
             outputs=[result_text, translation_text, subtitle_preview, subtitle_gen_result, status_md]
         ).then(
             # 更新带字幕的视频下拉框

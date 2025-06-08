@@ -38,7 +38,7 @@ class MediaProcessor:
         LOG.info("🎵 多媒体处理器初始化完成")
     
     def process_file(self, file_path, output_format="SRT", enable_translation=False, 
-                 enable_short_subtitles=False, only_preprocess=False, skip_preprocess=False):
+                 only_preprocess=False, skip_preprocess=False):
         """
         处理文件
         
@@ -46,7 +46,6 @@ class MediaProcessor:
         - file_path: 文件路径
         - output_format: 输出格式
         - enable_translation: 是否启用翻译
-        - enable_short_subtitles: 是否启用短字幕模式
         - only_preprocess: 是否只执行预处理（9:16裁剪）
         - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
         
@@ -123,8 +122,7 @@ class MediaProcessor:
                 recognition_result, 
                 file_info, 
                 output_format,
-                enable_translation,
-                enable_short_subtitles
+                enable_translation
             )
             
             # 保存到数据库 - 即使是skip_preprocess模式也要保存字幕
@@ -422,7 +420,7 @@ class MediaProcessor:
         temp_filename = f"temp_audio_{os.getpid()}.wav"
         return os.path.join(temp_dir, temp_filename)
     
-    def _generate_subtitles(self, recognition_result, file_info, output_format, is_bilingual, enable_short_subtitles):
+    def _generate_subtitles(self, recognition_result, file_info, output_format, is_bilingual):
         """
         生成字幕文件
         
@@ -431,40 +429,11 @@ class MediaProcessor:
         - file_info: 文件信息
         - output_format: 输出格式
         - is_bilingual: 是否双语
-        - enable_short_subtitles: 是否启用短字幕模式
         
         返回:
         - dict: 字幕生成结果
         """
         try:
-            # 如果启用短字幕模式，先对识别结果进行切分
-            if enable_short_subtitles:
-                from subtitle_splitter import split_subtitle_chunks
-                
-                # 获取原始chunks
-                original_chunks = recognition_result.get("english_chunks", recognition_result.get("chunks", []))
-                
-                if is_bilingual:
-                    # 双语模式：使用对齐后的chunks
-                    from src.openai_whisper import align_bilingual_chunks
-                    english_chunks = recognition_result.get("english_chunks", [])
-                    chinese_chunks = recognition_result.get("chinese_chunks", [])
-                    aligned_chunks = align_bilingual_chunks(english_chunks, chinese_chunks)
-                    
-                    # 切分双语字幕
-                    split_chunks = split_subtitle_chunks(aligned_chunks, is_bilingual=True)
-                    
-                    # 更新识别结果
-                    recognition_result["english_chunks"] = [{"text": chunk["english"], "timestamp": chunk["timestamp"]} for chunk in split_chunks]
-                    recognition_result["chinese_chunks"] = [{"text": chunk["chinese"], "timestamp": chunk["timestamp"]} for chunk in split_chunks]
-                    recognition_result["chunks"] = recognition_result["english_chunks"]  # 保持兼容性
-                else:
-                    # 单语模式
-                    split_chunks = split_subtitle_chunks(original_chunks, is_bilingual=False)
-                    recognition_result["chunks"] = split_chunks
-                
-                LOG.info(f"🔧 字幕切分完成: 原始 {len(original_chunks)} 段 -> 切分后 {len(split_chunks)} 段")
-            
             # 使用原始文件名（不含扩展名）
             original_file_name = os.path.splitext(file_info['name'])[0]
             
@@ -587,7 +556,7 @@ class MediaProcessor:
 media_processor = MediaProcessor()
 
 def process_media_file(file_path, output_format="SRT", enable_translation=False, 
-                     enable_short_subtitles=False, only_preprocess=False, skip_preprocess=False):
+                     only_preprocess=False, skip_preprocess=False):
     """
     外部调用接口：处理媒体文件
     
@@ -595,7 +564,6 @@ def process_media_file(file_path, output_format="SRT", enable_translation=False,
     - file_path: 文件路径
     - output_format: 输出格式 ("LRC" 或 "SRT")
     - enable_translation: 是否启用翻译
-    - enable_short_subtitles: 是否启用短字幕模式
     - only_preprocess: 是否只执行预处理（9:16裁剪）
     - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
     
@@ -607,7 +575,6 @@ def process_media_file(file_path, output_format="SRT", enable_translation=False,
         file_path=file_path, 
         output_format=output_format, 
         enable_translation=enable_translation,
-        enable_short_subtitles=enable_short_subtitles,
         only_preprocess=only_preprocess,
         skip_preprocess=skip_preprocess
     )
