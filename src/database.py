@@ -451,7 +451,7 @@ class DatabaseManager:
                 """, (subtitle_id,))
             elif series_id:
                 cursor.execute("""
-                    SELECT k.*, s.begin_time, s.end_time 
+                    SELECT k.*, s.begin_time, s.end_time
                     FROM t_keywords k
                     JOIN t_subtitle s ON k.subtitle_id = s.id
                     WHERE s.series_id = ?
