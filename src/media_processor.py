@@ -13,18 +13,18 @@ import tempfile
 import subprocess
 import time
 from pathlib import Path
-from logger import LOG
-from file_detector import FileType, validate_file, get_file_info
-from video_processor import extract_audio_from_video, check_ffmpeg_availability
-from openai_whisper import asr, generate_lrc_content, save_lrc_file, generate_srt_content, save_srt_file
+from src.logger import LOG
+from src.file_detector import FileType, validate_file, get_file_info
+from src.video_processor import extract_audio_from_video, check_ffmpeg_availability
+from src.openai_whisper import asr, generate_lrc_content, save_lrc_file, generate_srt_content, save_srt_file
 try:
-    from database import db_manager
+    from src.database import db_manager
 except ImportError:
     # 如果在其他目录运行，尝试相对导入
     import sys
     import os
     sys.path.append(os.path.dirname(__file__))
-    from database import db_manager
+    from src.database import db_manager
 
 class MediaProcessor:
     """多媒体处理器类"""
@@ -246,6 +246,7 @@ class MediaProcessor:
             
             # 2. 准备字幕数据
             subtitles_data = []
+            LOG.info(f"🔄 准备字幕数据: {recognition_result}")
             chunks = recognition_result.get('chunks', [])
             LOG.info(f"📝 处理字幕数据: {len(chunks)} 个chunks")
             
@@ -297,6 +298,8 @@ class MediaProcessor:
                     begin_time = max(0, timestamp[0])
                     end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
                     
+                    LOG.info(f"处理双语字幕 Chunk {i}: timestamp=[{begin_time}, {end_time}], text={english_text[:20]}...")
+                    
                     subtitles_data.append({
                         'begin_time': begin_time,
                         'end_time': end_time,
@@ -336,13 +339,16 @@ class MediaProcessor:
                     })
                 
                 # 使用修复后的chunks
-                for chunk in valid_chunks:
+                for i, chunk in enumerate(valid_chunks):
+                    LOG.info(f"处理单语字幕 Chunk {i}: {chunk}")
                     text = chunk.get('text', '')
                     timestamp = chunk.get('timestamp', [0, 0])
                     
                     # 最后再次确保timestamp有效
                     begin_time = max(0, timestamp[0])
                     end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
+                    
+                    LOG.info(f"处理单语字幕 Chunk {i}: timestamp=[{begin_time}, {end_time}], text={text[:20]}...")
                     
                     subtitles_data.append({
                         'begin_time': begin_time,
@@ -359,6 +365,10 @@ class MediaProcessor:
             # 4. 批量创建字幕记录
             if subtitles_data:
                 LOG.info(f"💾 准备保存 {len(subtitles_data)} 条字幕到数据库")
+                # 记录前几条字幕数据以便调试
+                for i, subtitle in enumerate(subtitles_data[:3]):
+                    LOG.info(f"字幕 {i+1}: begin_time={subtitle['begin_time']}, end_time={subtitle['end_time']}")
+                
                 subtitle_ids = db_manager.create_subtitles(series_id, subtitles_data)
                 LOG.info(f"✅ 数据库保存成功: 系列ID {series_id}, {len(subtitle_ids)} 条字幕")
                 

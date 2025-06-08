@@ -21,13 +21,13 @@ class VideoSubtitleBurner:
     
     def get_key_words_for_burning(self, series_id: int) -> List[Dict]:
         """
-        获取指定系列用于烧制的重点单词
+        获取指定系列用于烧制的所有字幕和重点单词
         
         参数:
         - series_id: 系列ID
         
         返回:
-        - List[Dict]: 每条字幕的最重要单词信息
+        - List[Dict]: 每条字幕的信息，包含该字幕的关键词（如果有）
         """
         try:
             # 获取系列的所有字幕
@@ -36,47 +36,60 @@ class VideoSubtitleBurner:
                 return []
             
             burn_data = []
+            keyword_count = 0
             
             for subtitle in subtitles:
                 subtitle_id = subtitle['id']
                 begin_time = subtitle['begin_time']
                 end_time = subtitle['end_time']
+                english_text = subtitle.get('english_text', '')
+                chinese_text = subtitle.get('chinese_text', '')
+                
+                # 为每个字幕创建基础数据
+                subtitle_data = {
+                    'subtitle_id': subtitle_id,
+                    'begin_time': begin_time,
+                    'end_time': end_time,
+                    'duration': end_time - begin_time,
+                    'english_text': english_text,
+                    'chinese_text': chinese_text,
+                    'has_keyword': False,
+                    'keyword': None,
+                    'phonetic': None,
+                    'explanation': None,
+                    'coca_rank': None
+                }
                 
                 # 获取该字幕的所有关键词
                 keywords = db_manager.get_keywords(subtitle_id=subtitle_id)
-                if not keywords:
-                    continue
+                if keywords:
+                    # 筛选符合条件的关键词：COCA排名 > 500 且不为空
+                    eligible_keywords = []
+                    for keyword in keywords:
+                        coca_rank = keyword.get('coca')
+                        if coca_rank and coca_rank > 500:  # 低频重点词汇
+                            eligible_keywords.append(keyword)
+                    
+                    if eligible_keywords:
+                        # 选择最重要的关键词
+                        selected_keyword = self._select_most_important_keyword(eligible_keywords)
+                        
+                        if selected_keyword:
+                            # 添加关键词信息到字幕数据
+                            subtitle_data['has_keyword'] = True
+                            subtitle_data['keyword'] = selected_keyword['key_word']
+                            subtitle_data['phonetic'] = selected_keyword.get('phonetic_symbol', '')
+                            subtitle_data['explanation'] = selected_keyword.get('explain_text', '')
+                            subtitle_data['coca_rank'] = selected_keyword.get('coca', 0)
+                            keyword_count += 1
                 
-                # 筛选符合条件的关键词：COCA排名 > 5000 且不为空
-                eligible_keywords = []
-                for keyword in keywords:
-                    coca_rank = keyword.get('coca')
-                    if coca_rank and coca_rank > 500:  # 低频重点词汇
-                        eligible_keywords.append(keyword)
-                
-                if not eligible_keywords:
-                    continue
-                
-                # 选择最重要的关键词
-                selected_keyword = self._select_most_important_keyword(eligible_keywords)
-                
-                if selected_keyword:
-                    burn_data.append({
-                        'subtitle_id': subtitle_id,
-                        'begin_time': begin_time,
-                        'end_time': end_time,
-                        'duration': end_time - begin_time,
-                        'keyword': selected_keyword['key_word'],
-                        'phonetic': selected_keyword.get('phonetic_symbol', ''),
-                        'explanation': selected_keyword.get('explain_text', ''),
-                        'coca_rank': selected_keyword.get('coca', 0)
-                    })
+                burn_data.append(subtitle_data)
             
-            LOG.info(f"📊 找到 {len(burn_data)} 个重点单词用于烧制")
+            LOG.info(f"📊 找到 {len(burn_data)} 条字幕，其中 {keyword_count} 条有重点单词")
             return burn_data
             
         except Exception as e:
-            LOG.error(f"获取烧制单词失败: {e}")
+            LOG.error(f"获取烧制数据失败: {e}")
             return []
     
     def _select_most_important_keyword(self, keywords: List[Dict]) -> Optional[Dict]:
@@ -360,15 +373,15 @@ class VideoSubtitleBurner:
                                 input_video: str, 
                                 output_video: str, 
                                 burn_data: List[Dict],
-                                title_text: str = "第二遍: 词汇与文法分析",
+                                title_text: str,
                                 progress_callback=None) -> bool:
         """
-        烧制视频，添加重点单词字幕，使用pre_process.py的方法
+        烧制视频，添加字幕和重点单词，处理整个视频
         
         参数:
         - input_video: 输入视频路径
         - output_video: 输出视频路径
-        - burn_data: 烧制数据
+        - burn_data: 烧制数据（所有字幕段落，部分带关键词）
         - title_text: 顶部标题栏文字
         - progress_callback: 进度回调函数
         
@@ -381,42 +394,40 @@ class VideoSubtitleBurner:
             if progress_callback:
                 progress_callback("🎬 开始视频烧制处理...")
             
-            # 获取原始字幕内容作为底部文字
-            # 处理每个时间段的烧制
+            if not burn_data:
+                if progress_callback:
+                    progress_callback("❌ 没有找到字幕数据，无法烧制")
+                return False
+            
+            # 获取有关键词的字幕数量
+            keyword_segments = [item for item in burn_data if item['has_keyword']]
+            if progress_callback:
+                progress_callback(f"📊 共 {len(burn_data)} 条字幕，其中 {len(keyword_segments)} 条有重点单词")
+            
+            # 处理每个字幕段落
             for i, item in enumerate(burn_data):
-                if progress_callback and i % 5 == 0:  # 每处理5个关键词更新一次进度
-                    progress_callback(f"🔄 正在处理关键词 {i+1}/{len(burn_data)}: {item['keyword']}")
-                
-                # 获取原始字幕文本
-                subtitle_id = item['subtitle_id']
-                subtitle_info = db_manager.get_subtitle_by_id(subtitle_id)
-                
-                if not subtitle_info:
-                    continue
+                if progress_callback and i % 10 == 0:  # 每处理10个字幕更新一次进度
+                    if item['has_keyword']:
+                        progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}: 关键词 {item['keyword']}")
+                    else:
+                        progress_callback(f"🔄 处理字幕 {i+1}/{len(burn_data)}")
                 
                 # 构建底部字幕文本（英文+中文）
                 bottom_text = ""
-                if 'english_text' in subtitle_info and subtitle_info['english_text']:
-                    bottom_text = subtitle_info['english_text']
-                if 'chinese_text' in subtitle_info and subtitle_info['chinese_text']:
+                if item['english_text']:
+                    bottom_text = item['english_text']
+                if item['chinese_text']:
                     if bottom_text:
                         bottom_text += "\n"
-                    bottom_text += subtitle_info['chinese_text']
+                    bottom_text += item['chinese_text']
                 
                 # 提取时间段
                 start_time = item['begin_time']
                 end_time = item['end_time']
                 
-                # 构建关键词信息
-                keyword_info = {
-                    'word': item['keyword'],
-                    'phonetic': item['phonetic'],
-                    'meaning': item['explanation']
-                }
-                
                 # 为当前时间段创建临时输出文件
                 temp_output = os.path.join(self.temp_dir, f"segment_{i}.mp4")
-                
+                LOG.info(f"temp_output: {temp_output}")
                 # 裁剪当前时间段的视频
                 segment_cmd = [
                     'ffmpeg', '-y',
@@ -436,6 +447,15 @@ class VideoSubtitleBurner:
                     universal_newlines=True
                 )
                 proc.communicate()
+                
+                # 构建关键词信息（如果有）
+                keyword_info = None
+                if item['has_keyword']:
+                    keyword_info = {
+                        'word': item['keyword'],
+                        'phonetic': item['phonetic'],
+                        'meaning': item['explanation']
+                    }
                 
                 # 为当前片段应用视频滤镜
                 video_filter = self._build_video_filter(title_text, bottom_text, keyword_info)
@@ -507,16 +527,17 @@ class VideoSubtitleBurner:
             LOG.error(error_msg)
             return False
         finally:
+            pass
             # 清理临时文件
-            try:
-                # 保留临时目录，但清理里面的文件，以便下次使用
-                for file in os.listdir(self.temp_dir):
-                    try:
-                        os.remove(os.path.join(self.temp_dir, file))
-                    except:
-                        pass
-            except:
-                pass
+            # try:
+            #     # 保留临时目录，但清理里面的文件，以便下次使用
+            #     for file in os.listdir(self.temp_dir):
+            #         try:
+            #             os.remove(os.path.join(self.temp_dir, file))
+            #         except:
+            #             pass
+            # except:
+            #     pass
     
     def process_series_video(self, 
                             series_id: int, 
@@ -640,47 +661,67 @@ class VideoSubtitleBurner:
         try:
             burn_data = self.get_key_words_for_burning(series_id)
             
+            # 筛选出有关键词的数据
+            keyword_data = [item for item in burn_data if item['has_keyword']]
+            
             # 统计信息
-            total_keywords = len(burn_data)
+            total_subtitles = len(burn_data)
+            total_keywords = len(keyword_data)
             total_duration = sum(item['duration'] for item in burn_data)
+            keyword_duration = sum(item['duration'] for item in keyword_data)
             
             # 词频分布
             coca_ranges = {
+                '500-5000': 0,
                 '5000-10000': 0,
-                '10000-20000': 0,
-                '20000+': 0
+                '10000+': 0
             }
             
-            for item in burn_data:
+            for item in keyword_data:
                 coca_rank = item['coca_rank']
-                if 5000 < coca_rank <= 10000:
-                    coca_ranges['5000-10000'] += 1
-                elif 10000 < coca_rank <= 20000:
-                    coca_ranges['10000-20000'] += 1
-                else:
-                    coca_ranges['20000+'] += 1
+                if coca_rank:
+                    if 500 < coca_rank <= 5000:
+                        coca_ranges['500-5000'] += 1
+                    elif 5000 < coca_rank <= 10000:
+                        coca_ranges['5000-10000'] += 1
+                    else:
+                        coca_ranges['10000+'] += 1
             
             # 示例单词（前5个）
-            sample_keywords = burn_data[:5] if burn_data else []
+            sample_keywords = keyword_data[:5] if keyword_data else []
+            
+            # 转换为展示格式
+            preview_keywords = []
+            for item in sample_keywords:
+                preview_keywords.append({
+                    'keyword': item['keyword'],
+                    'phonetic': item['phonetic'],
+                    'explanation': item['explanation'],
+                    'coca_rank': item['coca_rank']
+                })
             
             return {
+                'total_subtitles': total_subtitles,
                 'total_keywords': total_keywords,
                 'total_duration': round(total_duration, 2),
+                'keyword_duration': round(keyword_duration, 2),
                 'coca_distribution': coca_ranges,
-                'sample_keywords': sample_keywords,
-                'estimated_file_size': f"{total_keywords * 0.5:.1f} MB",  # 估算
-                'title': "第二遍：重点词汇消化"
+                'sample_keywords': preview_keywords,
+                'estimated_file_size': f"{(total_duration/60) * 15:.1f} MB",  # 估算: 每分钟约15MB
+                'title': "第三遍：重点词汇+字幕"
             }
             
         except Exception as e:
             LOG.error(f"获取烧制预览失败: {e}")
             return {
+                'total_subtitles': 0,
                 'total_keywords': 0,
                 'total_duration': 0,
+                'keyword_duration': 0,
                 'coca_distribution': {},
                 'sample_keywords': [],
                 'estimated_file_size': '0 MB',
-                'title': "第二遍：重点词汇消化"
+                'title': "第三遍：重点词汇+字幕"
             }
     
     def cleanup(self):

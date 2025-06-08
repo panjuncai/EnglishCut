@@ -494,7 +494,7 @@ def transcribe(inputs, task):
 mf_transcribe = gr.Interface(
     fn=transcribe,  # 执行转录的函数
     inputs=[
-        gr.Audio(source="microphone", type="filepath", label="麦克风输入"),  # 使用麦克风录制的音频输入
+        gr.Audio(sources=["microphone"], type="filepath", label="麦克风输入"),  # 使用麦克风录制的音频输入
         gr.Radio(choices=["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
     ],
     outputs=gr.Textbox(label="识别结果"),  # 输出为文本
@@ -506,7 +506,7 @@ mf_transcribe = gr.Interface(
 file_transcribe = gr.Interface(
     fn=transcribe,  # 执行转录的函数
     inputs=[
-        gr.Audio(source="upload", type="filepath", label="上传音频文件"),  # 上传的音频文件输入
+        gr.Audio(sources=["upload"], type="filepath", label="上传音频文件"),  # 上传的音频文件输入
         gr.Radio(choices=["transcribe", "translate"], label="任务类型", value="transcribe"),  # 任务选择（转录或翻译）
     ],
     outputs=gr.Textbox(label="识别结果"),  # 输出为文本
