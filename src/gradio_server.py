@@ -85,7 +85,7 @@ def load_subtitle_videos():
             LOG.warning("⚠️ 数据库中没有系列数据")
             return []
         
-        LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
+        # LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
         
         # 准备下拉选项
         options = []
@@ -101,7 +101,7 @@ def load_subtitle_videos():
         
         # 如果没有带字幕的视频，返回所有视频
         if not options:
-            LOG.warning("⚠️ 没有找到带字幕的视频，返回所有视频")
+            # LOG.warning("⚠️ 没有找到带字幕的视频，返回所有视频")
             # 使用相同的处理逻辑，检查文件是否存在
             for series in series_list:
                 path = series.get('new_file_path', '')
@@ -114,7 +114,7 @@ def load_subtitle_videos():
                     option = f"{series['id']}-{series['name']}"
                     options.append(option)
             
-            LOG.info(f"返回全部视频选项 ({len(options)}个)")
+            # LOG.info(f"返回全部视频选项 ({len(options)}个)")
         
         return options
     except Exception as e:

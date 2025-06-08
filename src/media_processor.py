@@ -286,33 +286,49 @@ class MediaProcessor:
                 total_duration = recognition_result.get('audio_duration', 0)
                 
                 for i, chunk in enumerate(chunks):
-                    timestamp = chunk.get('timestamp', [0, 0])
-                    # 确保timestamp是一个至少有两个元素的列表
-                    if not isinstance(timestamp, list) or len(timestamp) < 2:
-                        timestamp = [0, 0]
+                    timestamp = chunk.get('timestamp', (0, 0))
+                    # 确保timestamp格式正确(考虑元组情况)
+                    if isinstance(timestamp, tuple):
+                        start_time = timestamp[0] if len(timestamp) > 0 and timestamp[0] is not None else 0
+                        end_time = timestamp[1] if len(timestamp) > 1 and timestamp[1] is not None else 0
+                    elif isinstance(timestamp, list):
+                        start_time = timestamp[0] if len(timestamp) > 0 and timestamp[0] is not None else 0
+                        end_time = timestamp[1] if len(timestamp) > 1 and timestamp[1] is not None else 0
+                    else:
+                        # 如果timestamp既不是元组也不是列表，创建默认值
+                        start_time = 0
+                        end_time = 0
                     
-                    # 确保结束时间不为NULL且有效
-                    if timestamp[1] is None or timestamp[1] <= timestamp[0]:
+                    # 确保结束时间有效
+                    if end_time <= start_time:
                         # 如果这是最后一个chunk，使用总时长作为结束时间
                         if i == len(chunks) - 1 and total_duration > 0:
-                            timestamp[1] = total_duration
-                        # 否则，使用开始时间加上10秒或下一个开始时间作为结束时间
+                            end_time = total_duration
+                        # 否则，使用开始时间加上合理时长或下一个开始时间作为结束时间
                         else:
-                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < len(chunks) else 0
-                            if next_start and next_start > timestamp[0]:
-                                timestamp[1] = next_start
+                            next_chunk = chunks[i+1] if i+1 < len(chunks) else None
+                            if next_chunk:
+                                next_timestamp = next_chunk.get('timestamp', (0, 0))
+                                if isinstance(next_timestamp, (list, tuple)) and len(next_timestamp) > 0:
+                                    next_start = next_timestamp[0] if next_timestamp[0] is not None else 0
+                                    if next_start > start_time:
+                                        end_time = next_start
+                                    else:
+                                        end_time = start_time + 3  # 默认3秒
+                                else:
+                                    end_time = start_time + 3  # 默认3秒
                             else:
-                                timestamp[1] = timestamp[0] + 10
+                                end_time = start_time + 3  # 默认3秒
                     
-                    # 获取英文和中文文本
+                    # 获取对应的文本
                     english_text = chunk.get('text', '')
                     chinese_text = chunk.get('chinese_text', '')  # 从chunk中直接获取中文文本
                     
-                    # 最后再次确保timestamp有效
-                    begin_time = max(0, timestamp[0])
-                    end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
+                    # 确保时间有效
+                    begin_time = max(0, start_time)
+                    end_time = max(begin_time + 0.1, end_time)  # 确保end_time大于begin_time
                     
-                    LOG.info(f"处理双语字幕 Chunk {i}: timestamp=[{begin_time}, {end_time}], text={english_text[:20]}...")
+                    LOG.info(f"处理字幕 Chunk {i}: timestamp=({begin_time}, {end_time}), text={english_text[:20]}...")
                     
                     subtitles_data.append({
                         'begin_time': begin_time,
@@ -329,40 +345,47 @@ class MediaProcessor:
                 total_duration = recognition_result.get('audio_duration', 0)
                 
                 for i, chunk in enumerate(chunks):
-                    timestamp = chunk.get('timestamp', [0, 0])
-                    # 确保timestamp是一个至少有两个元素的列表
-                    if not isinstance(timestamp, list) or len(timestamp) < 2:
-                        timestamp = [0, 0]
+                    timestamp = chunk.get('timestamp', (0, 0))
+                    # 确保timestamp格式正确(考虑元组情况)
+                    if isinstance(timestamp, tuple):
+                        start_time = timestamp[0] if len(timestamp) > 0 and timestamp[0] is not None else 0
+                        end_time = timestamp[1] if len(timestamp) > 1 and timestamp[1] is not None else 0
+                    elif isinstance(timestamp, list):
+                        start_time = timestamp[0] if len(timestamp) > 0 and timestamp[0] is not None else 0
+                        end_time = timestamp[1] if len(timestamp) > 1 and timestamp[1] is not None else 0
+                    else:
+                        # 如果timestamp既不是元组也不是列表，创建默认值
+                        start_time = 0
+                        end_time = 0
                     
-                    # 确保结束时间不为NULL且有效
-                    if timestamp[1] is None or timestamp[1] <= timestamp[0]:
+                    # 确保结束时间有效
+                    if end_time <= start_time:
                         # 如果这是最后一个chunk，使用总时长作为结束时间
                         if i == len(chunks) - 1 and total_duration > 0:
-                            timestamp[1] = total_duration
-                        # 否则，使用开始时间加上10秒作为结束时间
+                            end_time = total_duration
+                        # 否则，使用开始时间加上合理时长或下一个开始时间作为结束时间
                         else:
-                            next_start = chunks[i+1].get('timestamp', [0, 0])[0] if i+1 < len(chunks) else 0
-                            if next_start and next_start > timestamp[0]:
-                                timestamp[1] = next_start
+                            next_chunk = chunks[i+1] if i+1 < len(chunks) else None
+                            if next_chunk:
+                                next_timestamp = next_chunk.get('timestamp', (0, 0))
+                                if isinstance(next_timestamp, (list, tuple)) and len(next_timestamp) > 0:
+                                    next_start = next_timestamp[0] if next_timestamp[0] is not None else 0
+                                    if next_start > start_time:
+                                        end_time = next_start
+                                    else:
+                                        end_time = start_time + 3  # 默认3秒
+                                else:
+                                    end_time = start_time + 3  # 默认3秒
                             else:
-                                timestamp[1] = timestamp[0] + 10
+                                end_time = start_time + 3  # 默认3秒
                     
-                    valid_chunks.append({
-                        'text': chunk.get('text', ''),
-                        'timestamp': timestamp
-                    })
-                
-                # 使用修复后的chunks
-                for i, chunk in enumerate(valid_chunks):
-                    LOG.info(f"处理单语字幕 Chunk {i}: {chunk}")
                     text = chunk.get('text', '')
-                    timestamp = chunk.get('timestamp', [0, 0])
                     
-                    # 最后再次确保timestamp有效
-                    begin_time = max(0, timestamp[0])
-                    end_time = max(begin_time + 1, timestamp[1])  # 确保end_time大于begin_time
+                    # 确保时间有效
+                    begin_time = max(0, start_time)
+                    end_time = max(begin_time + 0.1, end_time)  # 确保end_time大于begin_time
                     
-                    LOG.info(f"处理单语字幕 Chunk {i}: timestamp=[{begin_time}, {end_time}], text={text[:20]}...")
+                    LOG.info(f"处理单语字幕 Chunk {i}: timestamp=({begin_time}, {end_time}), text={text[:20]}...")
                     
                     subtitles_data.append({
                         'begin_time': begin_time,

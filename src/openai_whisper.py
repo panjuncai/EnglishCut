@@ -138,6 +138,26 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
     file_size = os.path.getsize(audio_file) / (1024 * 1024)  # MB
     LOG.info(f"🎵 开始处理音频文件: {os.path.basename(audio_file)} ({file_size:.1f}MB)")
     
+    # 获取音频实际时长
+    audio_duration = 0
+    try:
+        import subprocess
+        cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'default=noprint_wrappers=1:nokey=1', 
+            audio_file
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode == 0:
+            audio_duration = float(result.stdout.strip())
+            LOG.info(f"✅ 获取音频时长成功: {audio_duration} 秒")
+        else:
+            LOG.warning(f"⚠️ 获取音频时长失败: {result.stderr}")
+    except Exception as e:
+        LOG.error(f"❌ 获取音频时长出错: {str(e)}")
+    
     # 转换音频文件为 WAV 格式
     LOG.info("🔄 转换音频格式...")
     wav_file = convert_to_wav(audio_file)
@@ -159,7 +179,7 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         
         english_text = result["text"]
         chunks = result.get("chunks", [])
-        LOG.info(f"🌏 英文转录chunks: {chunks}")
+        # LOG.info(f"🌏 英文转录chunks: {chunks}")
         
         # 如果需要双语，翻译英文为中文
         chinese_text = ""
@@ -181,12 +201,52 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         inference_time = time.time() - inference_start
         total_time = time.time() - start_time
         
-        # 计算音频时长（估算）
-        audio_duration = len(english_text.split()) * 0.6  # 粗略估算：每个单词0.6秒
-        speed_ratio = audio_duration / total_time if total_time > 0 else 0
+        # 处理chunks中的None时间戳
+        if chunks and len(chunks) > 0:
+            # 修复最后一个chunk的结束时间戳为None的情况
+            last_chunk = chunks[-1]
+            last_timestamp = last_chunk.get("timestamp", (0, 0))
+            
+            # 检查是否是元组并且结束时间为None
+            if isinstance(last_timestamp, tuple) and (len(last_timestamp) < 2 or last_timestamp[1] is None):
+                LOG.info(f"🔧 检测到最后一个chunk时间戳结束时间为None: {last_timestamp}")
+                # 计算合理的结束时间：开始时间+3秒或音频总时长
+                end_time = audio_duration if audio_duration > 0 else last_timestamp[0] + 3
+                # 创建新的元组替换原来的元组
+                new_timestamp = (last_timestamp[0], end_time)
+                last_chunk["timestamp"] = new_timestamp
+                LOG.info(f"✅ 已修复最后一个chunk时间戳: {new_timestamp}")
+            
+            # 检查其他chunk的时间戳问题
+            # for i, chunk in enumerate(chunks):
+            #     timestamp = chunk.get("timestamp", (0, 0))
+            #     if isinstance(timestamp, tuple):
+            #         # 处理开始时间为None的情况
+            #         if len(timestamp) < 1 or timestamp[0] is None:
+            #             start_time = 0
+            #             end_time = 3 if (len(timestamp) < 2 or timestamp[1] is None) else timestamp[1]
+            #             chunk["timestamp"] = (start_time, end_time)
+            #             LOG.info(f"🔧 修复了chunk {i} 的开始时间为None的问题")
+                    
+            #         # 处理结束时间为None的情况(除了最后一个chunk)
+            #         elif i < len(chunks) - 1 and (len(timestamp) < 2 or timestamp[1] is None):
+            #             # 使用下一个chunk的开始时间作为当前chunk的结束时间
+            #             next_start = chunks[i+1].get("timestamp", (0, 0))[0] if i+1 < len(chunks) else 0
+            #             if next_start > timestamp[0]:
+            #                 chunk["timestamp"] = (timestamp[0], next_start)
+            #             else:
+            #                 chunk["timestamp"] = (timestamp[0], timestamp[0] + 3)
+            #             LOG.info(f"🔧 修复了chunk {i} 的结束时间为None的问题")
+        
+        # 如果前面未获取到音频时长，使用修复后的chunks中最后一个时间戳作为音频时长
+        if audio_duration <= 0 and chunks and len(chunks) > 0:
+            last_chunk = chunks[-1]
+            last_timestamp = last_chunk.get("timestamp", (0, 0))
+            if isinstance(last_timestamp, tuple) and len(last_timestamp) >= 2 and last_timestamp[1]:
+                audio_duration = last_timestamp[1]
+                LOG.info(f"📊 使用最后一个时间戳作为音频时长: {audio_duration} 秒")
         
         LOG.info(f"✅ 识别完成! 总时长: {total_time:.1f}秒, 推理: {inference_time:.1f}秒")
-        LOG.info(f"⚡ 处理速度: {speed_ratio:.1f}x 实时速度")
         LOG.info(f"📝 英文结果 ({len(english_text)} 字符): {english_text[:100]}...")
         if return_bilingual:
             LOG.info(f"🌏 中文翻译 ({len(chinese_text)} 字符): {chinese_text[:100]}...")
@@ -195,8 +255,8 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         return {
             "english_text": english_text,
             "chinese_text": chinese_text if return_bilingual else "",
-            "text": english_text,  # 保持兼容性
-            "chunks": chunks,     # 保持兼容性
+            "text": english_text,
+            "chunks": chunks,
             "processing_time": total_time,
             "audio_duration": audio_duration,
             "is_bilingual": return_bilingual
