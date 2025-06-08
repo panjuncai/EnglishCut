@@ -112,6 +112,7 @@ artificial /ˌɑːtɪˈfɪʃəl/ adj. 人工的，人造的
                 word = match.group(1).strip()
                 phonetic = match.group(2).strip()
                 explanation = match.group(3).strip()
+                explanation = explanation.lstrip("短语：").lstrip("短语").lstrip("短语，").lstrip("短语.")
                 
                 # 获取COCA词频排名
                 from coca_lookup import coca_lookup
@@ -135,6 +136,8 @@ artificial /ˌɑːtɪˈfɪʃəl/ adj. 人工的，人造的
                     if phonetic_match:
                         phonetic = phonetic_match.group(1)
                         explanation = remaining.replace(f"/{phonetic}/", "").strip()
+                        explanation = explanation.lstrip("短语：")
+                        explanation = explanation.lstrip("短语")
                         
                         # 获取COCA词频排名
                         from coca_lookup import coca_lookup

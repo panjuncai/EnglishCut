@@ -334,7 +334,7 @@ class VideoSubtitleBurner:
             
             if word:
                 # 字体大小设置
-                word_fontsize = 128     # 英文单词字体大小 - 英文大字
+                word_fontsize = 116     # 英文单词字体大小 - 英文大字
                 meaning_fontsize = 48   # 中文释义字体大小 - 中文中字
                 phonetic_fontsize = 26  # 音标字体大小 - 音标小字
                 
@@ -351,7 +351,7 @@ class VideoSubtitleBurner:
                 
                 # 根据单词长度调整宽度
                 # 更精确地估算字符宽度（考虑更新的字体大小）
-                word_width = len(keyword_text.get('word', '')) * 44      # 128px字体下英文字符约48像素
+                word_width = len(keyword_text.get('word', '')) * 48      # 128px字体下英文字符约48像素
                 meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 64px字体下中文字符约36像素
                 phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 26px字体下音标字符约10像素
                 
@@ -359,7 +359,7 @@ class VideoSubtitleBurner:
                 max_text_len = max(word_width, meaning_width, phonetic_width)
                 
                 # 计算宽度，使用更小的内边距
-                padding_x = 80  # 左右各20像素的内边距
+                padding_x = 60  # 左右各30像素的内边距
                 rect_width = max(250, min(max_text_len + padding_x, 700))
                 center_x = 360  # 屏幕中心水平坐标
                 rect_x = center_x - rect_width/2
