@@ -402,7 +402,12 @@ def create_main_interface():
                 # 视频预览
                 video_preview = gr.Video(
                     label="预览视频",
-                    visible=False
+                    visible=False,
+                    height=480,  # 固定高度
+                    width=270,   # 固定宽度，保持9:16比例
+                    autoplay=False,  # 不自动播放
+                    show_label=True,
+                    elem_id="video_preview_element"
                 )
                 
                 # 烧制进度和结果
@@ -972,7 +977,11 @@ def create_main_interface():
                 
                 # 返回预览信息和视频预览更新
                 if video_preview_path:
-                    return preview_text, gr.update(visible=True, value=video_preview_path)
+                    # 返回添加了视频预览路径的更新
+                    return preview_text, gr.update(
+                        visible=True, 
+                        value=video_preview_path
+                    )
                 else:
                     return preview_text, gr.update(visible=False)
                     
