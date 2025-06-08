@@ -131,6 +131,22 @@ class DatabaseManager:
             if 'coca' not in keyword_columns:
                 cursor.execute("ALTER TABLE t_keywords ADD COLUMN coca INTEGER")
                 LOG.info("📊 已添加 coca 字段到 t_keywords 表")
+            
+            # 添加 is_selected 字段（如果不存在）
+            if 'is_selected' not in keyword_columns:
+                cursor.execute("ALTER TABLE t_keywords ADD COLUMN is_selected INTEGER DEFAULT 0")
+                LOG.info("📊 已添加 is_selected 字段到 t_keywords 表")
+                
+                # 根据现有的coca值初始化is_selected字段
+                cursor.execute("""
+                    UPDATE t_keywords 
+                    SET is_selected = CASE 
+                        WHEN coca > 5000 THEN 1
+                        ELSE 0
+                    END
+                    WHERE coca IS NOT NULL
+                """)
+                LOG.info("📊 已根据coca值初始化 is_selected 字段")
                 
         except Exception as e:
             LOG.error(f"❌ 数据库迁移失败: {e}")
@@ -317,15 +333,22 @@ class DatabaseManager:
                 phonetic_symbol = keyword.get('phonetic_symbol', '').replace("'", "`") if keyword.get('phonetic_symbol') else ''
                 explain_text = keyword.get('explain_text', '').replace("'", "`") if keyword.get('explain_text') else ''
                 
+                # 获取coca值
+                coca_value = keyword.get('coca', None)
+                
+                # 根据coca值确定是否选中（大于5000则选中）
+                is_selected = 1 if coca_value and coca_value > 5000 else 0
+                
                 cursor.execute("""
-                    INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text, coca)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text, coca, is_selected)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     current_subtitle_id,
                     key_word,
                     phonetic_symbol,
                     explain_text,
-                    keyword.get('coca', None)
+                    coca_value,
+                    is_selected
                 ))
                 
                 keyword_ids.append(cursor.lastrowid)
@@ -706,6 +729,131 @@ class DatabaseManager:
                 "keyword_count": 0,
                 "success": False,
                 "error": str(e)
+            }
+
+    def update_keyword_selection(self, keyword_id: int, is_selected: bool) -> bool:
+        """
+        更新关键词的选择状态
+        
+        参数:
+        - keyword_id: 关键词ID
+        - is_selected: 是否选中（True为选中，False为不选中）
+        
+        返回:
+        - bool: 是否更新成功
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 将布尔值转换为整数（1为选中，0为不选中）
+                selection_value = 1 if is_selected else 0
+                
+                cursor.execute("""
+                    UPDATE t_keywords
+                    SET is_selected = ?
+                    WHERE id = ?
+                """, (selection_value, keyword_id))
+                
+                conn.commit()
+                
+                if cursor.rowcount > 0:
+                    LOG.info(f"✅ 已更新关键词(ID: {keyword_id})的选择状态为: {is_selected}")
+                    return True
+                else:
+                    LOG.warning(f"⚠️ 找不到关键词(ID: {keyword_id})")
+                    return False
+                
+        except Exception as e:
+            LOG.error(f"❌ 更新关键词选择状态失败: {e}")
+            return False
+            
+    def batch_update_keyword_selection(self, series_id: int, selection_rule: str) -> Dict:
+        """
+        批量更新系列中关键词的选择状态
+        
+        参数:
+        - series_id: 系列ID
+        - selection_rule: 选择规则，可以是以下值之一：
+          - "all": 选择所有关键词
+          - "none": 取消选择所有关键词
+          - "coca5000": 选择COCA > 5000的关键词
+          - "coca10000": 选择COCA > 10000的关键词
+        
+        返回:
+        - Dict: 更新结果统计
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 构建更新条件
+                if selection_rule == "all":
+                    # 选择所有关键词
+                    update_sql = """
+                        UPDATE t_keywords 
+                        SET is_selected = 1 
+                        WHERE subtitle_id IN (
+                            SELECT id FROM t_subtitle WHERE series_id = ?
+                        )
+                    """
+                    params = (series_id,)
+                elif selection_rule == "none":
+                    # 取消选择所有关键词
+                    update_sql = """
+                        UPDATE t_keywords 
+                        SET is_selected = 0 
+                        WHERE subtitle_id IN (
+                            SELECT id FROM t_subtitle WHERE series_id = ?
+                        )
+                    """
+                    params = (series_id,)
+                elif selection_rule == "coca5000":
+                    # 选择COCA > 5000的关键词
+                    update_sql = """
+                        UPDATE t_keywords 
+                        SET is_selected = CASE WHEN coca > 5000 THEN 1 ELSE 0 END 
+                        WHERE subtitle_id IN (
+                            SELECT id FROM t_subtitle WHERE series_id = ?
+                        ) AND coca IS NOT NULL
+                    """
+                    params = (series_id,)
+                elif selection_rule == "coca10000":
+                    # 选择COCA > 10000的关键词
+                    update_sql = """
+                        UPDATE t_keywords 
+                        SET is_selected = CASE WHEN coca > 10000 THEN 1 ELSE 0 END 
+                        WHERE subtitle_id IN (
+                            SELECT id FROM t_subtitle WHERE series_id = ?
+                        ) AND coca IS NOT NULL
+                    """
+                    params = (series_id,)
+                else:
+                    return {
+                        "success": False,
+                        "error": f"不支持的选择规则: {selection_rule}",
+                        "updated_count": 0
+                    }
+                
+                # 执行更新
+                cursor.execute(update_sql, params)
+                updated_count = cursor.rowcount
+                
+                conn.commit()
+                
+                LOG.info(f"✅ 已更新 {updated_count} 个关键词的选择状态 (规则: {selection_rule})")
+                return {
+                    "success": True,
+                    "updated_count": updated_count,
+                    "rule": selection_rule
+                }
+                
+        except Exception as e:
+            LOG.error(f"❌ 批量更新关键词选择状态失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "updated_count": 0
             }
 
 # 全局数据库实例

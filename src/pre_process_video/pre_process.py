@@ -30,7 +30,7 @@ class VideoProcessor:
     def process_video(self, 
                     input_filename, 
                     output_filename=None, 
-                    top_text="第三遍：完全消化", 
+                    top_text="第三遍:完全消化", 
                     bottom_text="This is test 这是测试",
                     keyword_text=None):
         """

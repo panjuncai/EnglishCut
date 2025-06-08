@@ -585,8 +585,25 @@ def create_database_interface():
                 progress_log = []
                 
                 def progress_callback(message):
-                    progress_log.append(message)
-                    return '\n'.join(progress_log[-10:])  # 显示最近10条消息
+                    # 特殊处理进度消息，保留处理状态和成功率统计信息
+                    if message.startswith("🎬 进度:") or message.startswith("📊 成功处理"):
+                        # 查找并替换之前的相同类型消息
+                        for i, log in enumerate(progress_log):
+                            if log.startswith("🎬 进度:") and message.startswith("🎬 进度:"):
+                                progress_log[i] = message
+                                break
+                            elif log.startswith("📊 成功处理") and message.startswith("📊 成功处理"):
+                                progress_log[i] = message
+                                break
+                        else:
+                            # 如果没有找到相同类型的消息，就添加新消息
+                            progress_log.append(message)
+                    else:
+                        # 其他消息直接添加
+                        progress_log.append(message)
+                    
+                    # 返回格式化的日志，最近15条消息
+                    return '\n'.join(progress_log[-15:])
                 
                 # 开始烧制
                 yield "🎬 开始烧制...", ""
@@ -595,7 +612,7 @@ def create_database_interface():
                 output_video = video_burner.process_series_video(
                     int(series_id),
                     output_dir,
-                    title_text="第三遍：完全消化",
+                    title_text="第三遍:完全消化",
                     progress_callback=progress_callback
                 )
                 

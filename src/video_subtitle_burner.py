@@ -63,11 +63,11 @@ class VideoSubtitleBurner:
                 # 获取该字幕的所有关键词
                 keywords = db_manager.get_keywords(subtitle_id=subtitle_id)
                 if keywords:
-                    # 筛选符合条件的关键词：COCA排名 > 500 且不为空
+                    # 筛选已选中的关键词
                     eligible_keywords = []
                     for keyword in keywords:
-                        coca_rank = keyword.get('coca')
-                        if coca_rank and coca_rank > 500:  # 低频重点词汇
+                        # 检查is_selected字段，如果为1则选中
+                        if keyword.get('is_selected', 0) == 1:
                             eligible_keywords.append(keyword)
                     
                     if eligible_keywords:
@@ -237,7 +237,7 @@ class VideoSubtitleBurner:
             "drawbox=x=0:y=1070:w=720:h=270:color=#fbfbf3@1.0:t=fill",  # 底部区域浅米色不透明背景
             
             # 第3步：添加顶部文字（调大白色字体，使用粗体字体文件）
-            f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=88:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
+            f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
         ]
         
         # 第4步：添加底部文字（鲜亮黄色字体带粗黑色描边，模拟图片效果）
@@ -536,7 +536,7 @@ class VideoSubtitleBurner:
         
         # 最后，对整个滤镜字符串进行额外检查，确保没有未转义的特殊字符
         filter_str = ','.join(filter_chain)
-        LOG.debug(f"生成的滤镜字符串: {filter_str}")
+        # LOG.debug(f"生成的滤镜字符串: {filter_str}")
         return filter_str
     
     def burn_video_with_keywords(self, 
@@ -702,6 +702,13 @@ class VideoSubtitleBurner:
                     # LOG.info(f"片段 {i} 处理成功: {processed_segment_path}")
                     successfully_processed_segments.append(i)
                     
+                    # 向前端发送处理成功的信息
+                    if progress_callback and i % 5 == 0:  # 每5个片段更新一次，避免过于频繁
+                        current_progress = f"🎬 进度: {i+1}/{len(burn_data)} | 成功: {len(successfully_processed_segments)}"
+                        if item['has_keyword']:
+                            current_progress += f" | 单词: {item['keyword']}"
+                        progress_callback(current_progress)
+                    
                 except Exception as e:
                     LOG.error(f"处理片段 {i} 时发生异常: {str(e)}")
                     import traceback
@@ -713,6 +720,13 @@ class VideoSubtitleBurner:
             LOG.info(f"成功处理 {len(successfully_processed_segments)}/{len(burn_data)} 个片段")
             if failed_segments:
                 LOG.warning(f"失败片段索引: {failed_segments}")
+            
+            # 向前端发送处理结果统计
+            if progress_callback:
+                success_rate = len(successfully_processed_segments) / len(burn_data) * 100
+                progress_callback(f"📊 成功处理 {len(successfully_processed_segments)}/{len(burn_data)} 个片段 ({success_rate:.1f}%)")
+                if failed_segments:
+                    progress_callback(f"⚠️ {len(failed_segments)} 个片段处理失败")
             
             # 只处理成功的片段
             if not successfully_processed_segments:
@@ -777,7 +791,34 @@ class VideoSubtitleBurner:
             # 检查输出文件
             if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
                 if progress_callback:
+                    # 添加关键词统计信息
+                    keyword_count = sum(1 for item in burn_data if item['has_keyword'])
+                    
+                    # 词频分布统计
+                    coca_ranges = {
+                        '500-5000': 0,
+                        '5000-10000': 0,
+                        '10000以上': 0
+                    }
+                    
+                    for item in burn_data:
+                        if item['has_keyword'] and item['coca_rank']:
+                            coca_rank = item['coca_rank']
+                            if 500 < coca_rank <= 5000:
+                                coca_ranges['500-5000'] += 1
+                            elif 5000 < coca_rank <= 10000:
+                                coca_ranges['5000-10000'] += 1
+                            else:
+                                coca_ranges['10000以上'] += 1
+                    
+                    # 添加统计信息到进度
+                    progress_callback("📈 关键词统计:")
+                    progress_callback(f"  - 总计: {keyword_count} 个单词")
+                    progress_callback(f"  - 500-5000: {coca_ranges['500-5000']} 个")
+                    progress_callback(f"  - 5000-10000: {coca_ranges['5000-10000']} 个")
+                    progress_callback(f"  - 10000以上: {coca_ranges['10000以上']} 个")
                     progress_callback("✅ 视频烧制完成！")
+                
                 LOG.info(f"✅ 视频烧制成功: {output_video}, 大小: {os.path.getsize(output_video)/1024/1024:.2f}MB")
                 return True
             else:
@@ -866,29 +907,28 @@ class VideoSubtitleBurner:
             LOG.error(error_msg)
             return False
         finally:
-            pass
             # 清理临时文件
-            # try:
-            #     # 清理临时视频文件
-            #     for i in range(len(burn_data)):
-            #         temp_files = [
-            #             os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
-            #             os.path.join(self.temp_dir, f"segment_{i}.mp4")
-            #         ]
-            #         for temp_file in temp_files:
-            #             if os.path.exists(temp_file):
-            #                 os.remove(temp_file)
-            #                 LOG.debug(f"已删除临时文件: {temp_file}")
+            try:
+                # 清理临时视频文件
+                for i in range(len(burn_data)):
+                    temp_files = [
+                        os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
+                        os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    ]
+                    for temp_file in temp_files:
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                            LOG.debug(f"已删除临时文件: {temp_file}")
                 
-            #     # 删除临时片段列表文件
-            #     segments_list_path = os.path.join(self.temp_dir, "segments.txt")
-            #     if os.path.exists(segments_list_path):
-            #         os.remove(segments_list_path)
-            #         LOG.debug("已删除临时片段列表文件")
+                # 删除临时片段列表文件
+                segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+                if os.path.exists(segments_list_path):
+                    os.remove(segments_list_path)
+                    LOG.debug("已删除临时片段列表文件")
                 
-            #     LOG.info("🧹 临时文件清理完成")
-            # except Exception as e:
-            #     LOG.warning(f"清理临时文件失败: {e}")
+                LOG.info("🧹 临时文件清理完成")
+            except Exception as e:
+                LOG.warning(f"清理临时文件失败: {e}")
     
     def process_series_video(self, 
                             series_id: int, 
@@ -1015,6 +1055,14 @@ class VideoSubtitleBurner:
             # 筛选出有关键词的数据
             keyword_data = [item for item in burn_data if item['has_keyword']]
             
+            # 获取所有关键词，包括未选中的
+            all_keywords = db_manager.get_keywords(series_id=series_id)
+            total_keywords = len(all_keywords)
+            
+            # 计算选中的关键词数量
+            selected_keywords = [kw for kw in all_keywords if kw.get('is_selected', 0) == 1]
+            selected_count = len(selected_keywords)
+            
             # 统计信息
             total_subtitles = len(burn_data)
             total_keywords = len(keyword_data)
@@ -1059,7 +1107,9 @@ class VideoSubtitleBurner:
                 'coca_distribution': coca_ranges,
                 'sample_keywords': preview_keywords,
                 'estimated_file_size': f"{(total_duration/60) * 15:.1f} MB",  # 估算: 每分钟约15MB
-                'title': ""
+                'title': "",
+                'total_available_keywords': total_keywords,
+                'selected_keywords': selected_count
             }
             
         except Exception as e:
@@ -1072,7 +1122,9 @@ class VideoSubtitleBurner:
                 'coca_distribution': {},
                 'sample_keywords': [],
                 'estimated_file_size': '0 MB',
-                'title': ""
+                'title': "",
+                'total_available_keywords': 0,
+                'selected_keywords': 0
             }
     
     def cleanup(self):
