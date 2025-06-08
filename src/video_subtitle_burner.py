@@ -1345,18 +1345,14 @@ class VideoSubtitleBurner:
             burn_data = self.get_key_words_for_burning(series_id)
             if not burn_data:
                 if progress_callback:
-                    progress_callback("⚠️ 没有找到符合条件的重点单词")
+                    progress_callback("⚠️ 没有找到字幕数据")
                 return None
             
-            # 筛选出有关键词的段落
-            keyword_data = [item for item in burn_data if item['has_keyword']]
-            if not keyword_data:
-                if progress_callback:
-                    progress_callback("⚠️ 没有找到有关键词的段落")
-                return None
+            # 计算有关键词的段落数量，仅用于显示信息
+            keyword_count = sum(1 for item in burn_data if item['has_keyword'])
             
             if progress_callback:
-                progress_callback(f"📚 找到 {len(keyword_data)} 个有关键词的段落用于烧制")
+                progress_callback(f"📚 找到 {len(burn_data)} 个字幕段落，其中 {keyword_count} 个有关键词")
             
             # 准备输出路径
             os.makedirs(output_dir, exist_ok=True)
@@ -1375,23 +1371,29 @@ class VideoSubtitleBurner:
             if progress_callback:
                 progress_callback(f"📋 输入视频: {input_basename}, 输出视频: {base_name}_2.mp4")
             
-            # 执行烧制 - 只处理有关键词的段落
+            # 执行烧制 - 处理所有字幕段落
             import subprocess
             
             if progress_callback:
-                progress_callback("🎬 开始只烧制关键词处理...")
+                progress_callback("🎬 开始处理视频...")
             
-            # 处理每个有关键词的段落
+            # 处理每个字幕段落
             successfully_processed_segments = []  # 跟踪成功处理的片段
             failed_segments = []  # 跟踪失败的片段
             
-            for i, item in enumerate(keyword_data):
+            for i, item in enumerate(burn_data):
                 try:
                     # 记录开始处理此片段
-                    LOG.info(f"开始处理第 {i+1}/{len(keyword_data)} 个关键词片段")
+                    if item['has_keyword']:
+                        LOG.info(f"开始处理第 {i+1}/{len(burn_data)} 个片段 (含关键词: {item['keyword']})")
+                    else:
+                        LOG.info(f"开始处理第 {i+1}/{len(burn_data)} 个片段 (无关键词)")
                     
-                    if progress_callback and i % 10 == 0:  # 每处理10个关键词更新一次进度
-                        progress_callback(f"🔄 处理关键词 {i+1}/{len(keyword_data)}: {item['keyword']}")
+                    if progress_callback and i % 10 == 0:  # 每处理10个片段更新一次进度
+                        if item['has_keyword']:
+                            progress_callback(f"🔄 处理片段 {i+1}/{len(burn_data)}: 关键词 {item['keyword']}")
+                        else:
+                            progress_callback(f"🔄 处理片段 {i+1}/{len(burn_data)}")
                     
                     # 提取时间段
                     start_time = item['begin_time']
@@ -1446,12 +1448,14 @@ class VideoSubtitleBurner:
                         failed_segments.append(i)
                         continue
                     
-                    # 构建关键词信息
-                    keyword_info = {
-                        'word': item['keyword'],
-                        'phonetic': item['phonetic'],
-                        'meaning': item['explanation']
-                    }
+                    # 构建关键词信息（如果有）
+                    keyword_info = None
+                    if item['has_keyword']:
+                        keyword_info = {
+                            'word': item['keyword'],
+                            'phonetic': item['phonetic'],
+                            'meaning': item['explanation']
+                        }
                     
                     # 为当前片段应用视频滤镜 - 使用只有关键词的滤镜
                     video_filter = self._build_keywords_only_filter(title_text, keyword_info)
@@ -1492,8 +1496,9 @@ class VideoSubtitleBurner:
                     
                     # 向前端发送处理成功的信息
                     if progress_callback and i % 5 == 0:  # 每5个片段更新一次，避免过于频繁
-                        current_progress = f"🎬 进度: {i+1}/{len(keyword_data)} | 成功: {len(successfully_processed_segments)}"
-                        current_progress += f" | 单词: {item['keyword']}"
+                        current_progress = f"🎬 进度: {i+1}/{len(burn_data)} | 成功: {len(successfully_processed_segments)}"
+                        if item['has_keyword']:
+                            current_progress += f" | 单词: {item['keyword']}"
                         progress_callback(current_progress)
                     
                 except Exception as e:
@@ -1504,14 +1509,14 @@ class VideoSubtitleBurner:
                     continue
             
             # 报告处理结果
-            LOG.info(f"成功处理 {len(successfully_processed_segments)}/{len(keyword_data)} 个关键词片段")
+            LOG.info(f"成功处理 {len(successfully_processed_segments)}/{len(burn_data)} 个片段")
             if failed_segments:
                 LOG.warning(f"失败片段索引: {failed_segments}")
             
             # 向前端发送处理结果统计
             if progress_callback:
-                success_rate = len(successfully_processed_segments) / len(keyword_data) * 100 if keyword_data else 0
-                progress_callback(f"📊 成功处理 {len(successfully_processed_segments)}/{len(keyword_data)} 个片段 ({success_rate:.1f}%)")
+                success_rate = len(successfully_processed_segments) / len(burn_data) * 100 if burn_data else 0
+                progress_callback(f"📊 成功处理 {len(successfully_processed_segments)}/{len(burn_data)} 个片段 ({success_rate:.1f}%)")
                 if failed_segments:
                     progress_callback(f"⚠️ {len(failed_segments)} 个片段处理失败")
             
@@ -1565,8 +1570,9 @@ class VideoSubtitleBurner:
             if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
                 if progress_callback:
                     # 添加关键词统计信息
+                    keyword_count = sum(1 for item in burn_data if item['has_keyword'])
                     progress_callback("📈 关键词统计:")
-                    progress_callback(f"  - 总计: {len(keyword_data)} 个单词")
+                    progress_callback(f"  - 总计: {keyword_count} 个单词")
                     progress_callback("✅ 关键词烧制视频完成！")
                 
                 # 更新数据库中的烧制视频信息 - 更新为第二遍
@@ -1672,28 +1678,29 @@ class VideoSubtitleBurner:
             LOG.error(error_msg)
             return None
         finally:
+            pass
             # 清理临时文件
-            try:
-                # 清理临时视频文件
-                for i in range(len(keyword_data)):
-                    temp_files = [
-                        os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
-                        os.path.join(self.temp_dir, f"segment_{i}.mp4")
-                    ]
-                    for temp_file in temp_files:
-                        if os.path.exists(temp_file):
-                            os.remove(temp_file)
-                            LOG.debug(f"已删除临时文件: {temp_file}")
+            # try:
+            #     # 清理临时视频文件
+            #     for i in range(len(burn_data)):
+            #         temp_files = [
+            #             os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
+            #             os.path.join(self.temp_dir, f"segment_{i}.mp4")
+            #         ]
+            #         for temp_file in temp_files:
+            #             if os.path.exists(temp_file):
+            #                 os.remove(temp_file)
+            #                 LOG.debug(f"已删除临时文件: {temp_file}")
                 
-                # 删除临时片段列表文件
-                segments_list_path = os.path.join(self.temp_dir, "segments.txt")
-                if os.path.exists(segments_list_path):
-                    os.remove(segments_list_path)
-                    LOG.debug("已删除临时片段列表文件")
+            #     # 删除临时片段列表文件
+            #     segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+            #     if os.path.exists(segments_list_path):
+            #         os.remove(segments_list_path)
+            #         LOG.debug("已删除临时片段列表文件")
                 
-                LOG.info("🧹 临时文件清理完成")
-            except Exception as e:
-                LOG.warning(f"清理临时文件失败: {e}")
+            #     LOG.info("🧹 临时文件清理完成")
+            # except Exception as e:
+            #     LOG.warning(f"清理临时文件失败: {e}")
     
     def get_burn_preview(self, series_id: int) -> Dict:
         """
