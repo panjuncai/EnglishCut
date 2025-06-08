@@ -26,6 +26,7 @@ from logger import LOG
 from media_processor import process_media_file, get_media_formats_info
 from file_detector import FileType, get_file_type, validate_file
 from database import db_manager
+import pandas as pd
 
 # 初始化视频列表
 def load_video_list():
@@ -363,8 +364,15 @@ def create_main_interface():
                     headers=["ID", "字幕ID","单词", "音标", "释义", "COCA频率", "是否选中"],
                     datatype=["number", "number","str", "str", "str", "number", "number"],
                     label="提取的关键词",
-                    interactive=False,
+                    interactive=True,  # 设置为可交互
                     visible=False
+                )
+                
+                # 添加保存关键词选择状态的按钮
+                save_keywords_btn = gr.Button(
+                    "💾 保存关键词选择",
+                    variant="primary",
+                    visible=False  # 初始隐藏，只有在表格显示后才显示
                 )
             
             # 步骤4: 视频烧制
@@ -745,7 +753,7 @@ def create_main_interface():
             LOG.info(f"提取关键词 - 选择的视频: {video_selection}, 类型: {type(video_selection)}")
             
             if not video_selection:
-                return "### ❌ 错误\n请先选择视频", "## ℹ️ 系统状态\n等待选择视频", gr.update(visible=False)
+                return "### ❌ 错误\n请先选择视频", "## ℹ️ 系统状态\n等待选择视频", gr.update(visible=False), gr.update(visible=False)
             
             try:
                 # 多种格式可能性:
@@ -770,12 +778,14 @@ def create_main_interface():
                             return (
                                 f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID",
                                 "## ℹ️ 系统状态\n视频ID格式错误",
+                                gr.update(visible=False),
                                 gr.update(visible=False)
                             )
                     else:
                         return (
                             "### ❌ 错误\n视频选择格式错误",
                             "## ℹ️ 系统状态\n视频选择格式错误",
+                            gr.update(visible=False),
                             gr.update(visible=False)
                         )
                 else:
@@ -791,12 +801,14 @@ def create_main_interface():
                             return (
                                 f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID",
                                 "## ℹ️ 系统状态\n视频ID格式错误",
+                                gr.update(visible=False),
                                 gr.update(visible=False)
                             )
                     else:
                         return (
                             "### ❌ 错误\n视频选择格式错误",
                             "## ℹ️ 系统状态\n视频选择格式错误",
+                            gr.update(visible=False),
                             gr.update(visible=False)
                         )
                 
@@ -807,6 +819,7 @@ def create_main_interface():
                     return (
                         "### ❌ 错误\n未找到选择的视频",
                         "## ℹ️ 系统状态\n无法找到选择的视频",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 
@@ -819,6 +832,7 @@ def create_main_interface():
                     return (
                         "### ❌ 错误\n所选视频没有字幕",
                         "## ℹ️ 系统状态\n所选视频没有字幕数据",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 
@@ -847,6 +861,7 @@ def create_main_interface():
                         return (
                             "### ⚠️ 没有提取到关键词",
                             "## ℹ️ 系统状态\n提取关键词过程完成，但没有找到关键词",
+                            gr.update(visible=False),
                             gr.update(visible=False)
                         )
                     
@@ -870,20 +885,41 @@ def create_main_interface():
                     
                     LOG.info(f"成功保存 {saved_count} 个关键词到数据库")
                     
-                    # 准备表格数据
+                    # 获取保存后的关键词，确保使用正确的ID
+                    updated_keywords = db_manager.get_keywords(series_id=video_id)
+                    if not updated_keywords:
+                        LOG.warning("无法获取保存后的关键词")
+                        return (
+                            "### ⚠️ 关键词保存异常\n提取成功但无法获取保存后的关键词",
+                            "## ℹ️ 系统状态\n关键词提取过程遇到问题",
+                            gr.update(visible=False),
+                            gr.update(visible=False)
+                        )
+                    
+                    # 记录关键词ID列表，便于调试
+                    keyword_ids = [kw.get('id') for kw in updated_keywords if 'id' in kw]
+                    LOG.info(f"保存后的关键词ID列表（主键）: {keyword_ids}")
+                    
+                    # 准备表格数据 - 使用从数据库获取的关键词，而不是提取的关键词
                     table_data = []
-                    for kw in extracted_keywords:
+                    for kw in updated_keywords:
+                        # 重要：确保ID是t_keywords表的主键，不是subtitle_id
+                        if 'id' not in kw:
+                            LOG.warning(f"关键词缺少ID字段: {kw}")
+                            continue
+                            
+                        # 确保所有字段都存在，如果不存在则使用默认值
                         table_data.append([
-                            kw.get('id', 0),
-                            kw.get('subtitle_id', 0),
-                            kw.get('key_word', ''),
-                            kw.get('phonetic_symbol', ''),
-                            kw.get('explain_text', ''),
-                            kw.get('coca', 0),
-                            kw.get('is_selected', 0)
+                            kw.get('id', 0),                # 主键ID
+                            kw.get('subtitle_id', 0),       # 字幕ID
+                            kw.get('key_word', ''),         # 单词
+                            kw.get('phonetic_symbol', ''),  # 音标
+                            kw.get('explain_text', ''),     # 释义
+                            kw.get('coca', 0),              # COCA频率
+                            kw.get('is_selected', 0)        # 是否选中
                         ])
                     
-                    # 更新表格
+                    # 更新表格和保存按钮
                     return (
                         f"""### ✅ 关键词提取完成
 - **视频**: {series['name']}
@@ -892,8 +928,9 @@ def create_main_interface():
 - **成功保存**: {saved_count}
 - **COCA更新**: {'已更新' if update_coca else '未更新'}
                         """,
-                        "## ℹ️ 系统状态\n关键词提取完成，可以进行下一步",
-                        gr.update(visible=True, value=table_data)  # 显示关键词表格并更新数据
+                        "## ℹ️ 系统状态\n关键词提取完成，可以编辑并保存选中状态",
+                        gr.update(visible=True, value=table_data),  # 显示关键词表格并更新数据
+                        gr.update(visible=True)  # 显示保存按钮
                     )
                 
                 except ImportError:
@@ -901,6 +938,7 @@ def create_main_interface():
                     return (
                         "### ❌ 错误\n关键词提取模块未找到",
                         "## ℹ️ 系统状态\n缺少关键词提取功能模块",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 except Exception as e:
@@ -910,6 +948,7 @@ def create_main_interface():
                     return (
                         f"### ❌ 提取失败\n{str(e)}",
                         f"## ℹ️ 系统状态\n关键词提取失败: {str(e)}",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
             
@@ -918,6 +957,7 @@ def create_main_interface():
                 return (
                     f"### ❌ 发生错误\n{str(e)}",
                     f"## ℹ️ 系统状态\n关键词提取失败: {str(e)}",
+                    gr.update(visible=False),
                     gr.update(visible=False)
                 )
         
@@ -926,7 +966,7 @@ def create_main_interface():
             LOG.info(f"查询关键词 - 选择的视频: {video_selection}")
             
             if not video_selection:
-                return "### ❌ 错误\n请先选择视频", "## ℹ️ 系统状态\n等待选择视频", gr.update(visible=False)
+                return "### ❌ 错误\n请先选择视频", "## ℹ️ 系统状态\n等待选择视频", gr.update(visible=False), gr.update(visible=False)
             
             try:
                 # 多种格式可能性:
@@ -951,12 +991,14 @@ def create_main_interface():
                             return (
                                 f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID",
                                 "## ℹ️ 系统状态\n视频ID格式错误",
+                                gr.update(visible=False),
                                 gr.update(visible=False)
                             )
                     else:
                         return (
                             "### ❌ 错误\n视频选择格式错误",
                             "## ℹ️ 系统状态\n视频选择格式错误",
+                            gr.update(visible=False),
                             gr.update(visible=False)
                         )
                 else:
@@ -972,12 +1014,14 @@ def create_main_interface():
                             return (
                                 f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID",
                                 "## ℹ️ 系统状态\n视频ID格式错误",
+                                gr.update(visible=False),
                                 gr.update(visible=False)
                             )
                     else:
                         return (
                             "### ❌ 错误\n视频选择格式错误",
                             "## ℹ️ 系统状态\n视频选择格式错误",
+                            gr.update(visible=False),
                             gr.update(visible=False)
                         )
                 
@@ -988,6 +1032,7 @@ def create_main_interface():
                     return (
                         "### ❌ 错误\n未找到选择的视频",
                         "## ℹ️ 系统状态\n无法找到选择的视频",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 
@@ -1000,6 +1045,7 @@ def create_main_interface():
                     return (
                         "### ❌ 错误\n所选视频没有字幕",
                         "## ℹ️ 系统状态\n所选视频没有字幕数据",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 
@@ -1010,33 +1056,45 @@ def create_main_interface():
                     return (
                         "### ⚠️ 没有找到关键词\n请先点击\"提取关键词\"按钮提取关键词",
                         "## ℹ️ 系统状态\n所选视频没有关键词数据",
+                        gr.update(visible=False),
                         gr.update(visible=False)
                     )
                 
                 LOG.info(f"查询到 {len(keywords)} 个关键词")
                 
+                # 记录所有关键词ID（主键），确保前端显示正确的ID
+                keyword_ids = [kw.get('id') for kw in keywords if 'id' in kw]
+                LOG.info(f"关键词ID列表（主键）: {keyword_ids}")
+                
                 # 准备表格数据
                 table_data = []
                 for kw in keywords:
+                    # 重要：确保ID是t_keywords表的主键，不是subtitle_id
+                    if 'id' not in kw:
+                        LOG.warning(f"关键词缺少ID字段: {kw}")
+                        continue
+                        
+                    # 确保所有字段都存在，如果不存在则使用默认值
                     table_data.append([
-                        kw.get('id', 0),
-                        kw.get('subtitle_id', 0),
-                        kw.get('key_word', ''),
-                        kw.get('phonetic_symbol', ''),
-                        kw.get('explain_text', ''),
-                        kw.get('coca', 0),
-                        kw.get('is_selected', 0)
+                        kw.get('id', 0),                # 主键ID
+                        kw.get('subtitle_id', 0),       # 字幕ID
+                        kw.get('key_word', ''),         # 单词
+                        kw.get('phonetic_symbol', ''),  # 音标
+                        kw.get('explain_text', ''),     # 释义
+                        kw.get('coca', 0),              # COCA频率
+                        kw.get('is_selected', 0)        # 是否选中
                     ])
                 
-                # 更新表格
+                # 更新表格和保存按钮
                 return (
                     f"""### ✅ 关键词查询完成
 - **视频**: {series['name']}
 - **字幕数**: {len(subtitles)}
 - **关键词数**: {len(keywords)}
                     """,
-                    "## ℹ️ 系统状态\n关键词查询完成",
-                    gr.update(visible=True, value=table_data)  # 显示关键词表格并更新数据
+                    "## ℹ️ 系统状态\n关键词查询完成，可以编辑并保存选中状态",
+                    gr.update(visible=True, value=table_data),  # 显示关键词表格并更新数据
+                    gr.update(visible=True)  # 显示保存按钮
                 )
                 
             except Exception as e:
@@ -1046,7 +1104,166 @@ def create_main_interface():
                 return (
                     f"### ❌ 查询失败\n{str(e)}",
                     f"## ℹ️ 系统状态\n关键词查询失败: {str(e)}",
+                    gr.update(visible=False),
                     gr.update(visible=False)
+                )
+        
+        def save_keywords_selection(edited_data, video_selection):
+            """保存关键词选中状态"""
+            LOG.info(f"保存关键词选中状态 - 选择的视频: {video_selection}")
+            LOG.info(f"接收到的数据类型: {type(edited_data)}, 长度: {len(edited_data)}")
+            
+            if not video_selection:
+                return "### ❌ 错误\n无法确定要保存的视频", "## ℹ️ 系统状态\n保存失败，无法确定视频"
+            
+            try:
+                # 从选择中提取视频ID
+                video_id = None
+                
+                # 处理包含字幕数量的选项
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                    if len(parts) >= 1:
+                        video_id_str = parts[0].strip()
+                        try:
+                            video_id = int(video_id_str)
+                        except ValueError:
+                            return f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID", "## ℹ️ 系统状态\n保存失败，视频ID格式错误"
+                else:
+                    parts = video_selection.split('-')
+                    if len(parts) >= 1:
+                        video_id_str = parts[0].strip()
+                        try:
+                            video_id = int(video_id_str)
+                        except ValueError:
+                            return f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID", "## ℹ️ 系统状态\n保存失败，视频ID格式错误"
+                
+                if not video_id:
+                    return "### ❌ 错误\n无法确定视频ID", "## ℹ️ 系统状态\n保存失败，无法确定视频ID"
+                
+                # 获取关键词数据 - 用于验证ID
+                keywords = db_manager.get_keywords(series_id=video_id)
+                if not keywords:
+                    return "### ⚠️ 没有关键词数据\n无法更新关键词状态", "## ℹ️ 系统状态\n未找到关键词数据"
+                
+                LOG.info(f"从数据库获取到 {len(keywords)} 个关键词")
+                
+                # 创建关键词ID映射表，方便后续查询
+                keyword_id_map = {kw.get('id'): kw for kw in keywords if 'id' in kw}
+                valid_keyword_ids = set(keyword_id_map.keys())
+                LOG.info(f"有效的关键词ID列表: {valid_keyword_ids}")
+                
+                # 检查和记录数据格式
+                if hasattr(edited_data, 'columns'):
+                    LOG.info(f"DataFrame列名: {list(edited_data.columns)}")
+                
+                # 处理编辑后的数据
+                success_count = 0
+                processed_count = 0
+                
+                # 针对Pandas DataFrame的处理
+                if hasattr(edited_data, 'iloc') and hasattr(edited_data, 'columns'):
+                    LOG.info("检测到Pandas DataFrame")
+                    
+                    # 获取列名
+                    columns = list(edited_data.columns)
+                    LOG.info(f"表格列名: {columns}")
+                    
+                    # 查找ID列和是否选中列
+                    id_col = None
+                    selected_col = None
+                    
+                    # 假设列名中含有"ID"和"是否选中"
+                    for col in columns:
+                        if col == "ID":  # 确保精确匹配主键ID列
+                            id_col = col
+                            LOG.info(f"找到主键ID列: {col}")
+                        elif "选中" in col:
+                            selected_col = col
+                            LOG.info(f"找到选中状态列: {col}")
+                    
+                    # 如果找到了这两列，则进行处理
+                    if id_col is not None and selected_col is not None:
+                        # 输出所有ID用于调试
+                        all_ids = []
+                        for index, row in edited_data.iterrows():
+                            try:
+                                id_value = row[id_col]
+                                if isinstance(id_value, (int, float)) and not pd.isna(id_value):
+                                    all_ids.append(int(id_value))
+                            except:
+                                pass
+                        
+                        LOG.info(f"表格中的所有ID: {all_ids}")
+                        
+                        # 遍历每一行
+                        for index, row in edited_data.iterrows():
+                            try:
+                                # 使用列名安全地访问值
+                                id_value = row[id_col]
+                                selected_value = row[selected_col]
+                                
+                                # 检查ID是否为有效的数字
+                                if not isinstance(id_value, (int, float)) or pd.isna(id_value):
+                                    LOG.info(f"跳过非数字ID行: {id_value}")
+                                    continue
+                                
+                                # 转换为整数
+                                keyword_id = int(id_value)
+                                
+                                # 验证关键词ID是否在数据库中存在
+                                if keyword_id not in valid_keyword_ids:
+                                    LOG.warning(f"跳过无效关键词ID: {keyword_id}，该ID在数据库中不存在")
+                                    continue
+                                
+                                # 处理是否选中值
+                                is_selected = None
+                                
+                                if isinstance(selected_value, (int, float)) and not pd.isna(selected_value):
+                                    is_selected = int(selected_value)
+                                elif isinstance(selected_value, str) and selected_value.isdigit():
+                                    is_selected = int(selected_value)
+                                elif isinstance(selected_value, bool):
+                                    is_selected = 1 if selected_value else 0
+                                
+                                if is_selected is not None:
+                                    processed_count += 1
+                                    LOG.info(f"尝试更新关键词 ID={keyword_id} 的选中状态为 {is_selected}")
+                                    # 更新数据库
+                                    if db_manager.update_keyword_selection(keyword_id, bool(is_selected)):
+                                        success_count += 1
+                                        LOG.info(f"✅ 成功更新关键词 ID={keyword_id} 的选中状态为 {is_selected}")
+                                    else:
+                                        LOG.warning(f"❌ 更新关键词 ID={keyword_id} 失败")
+                                else:
+                                    LOG.warning(f"无法解析选中状态: {selected_value}")
+                            except Exception as e:
+                                LOG.error(f"处理行时出错: {e}, 行数据: {row}")
+                    else:
+                        LOG.warning(f"未找到必要的列: ID列={id_col}, 选中状态列={selected_col}")
+                else:
+                    LOG.warning("数据不是Pandas DataFrame或不包含预期的方法")
+                
+                # 返回结果
+                if success_count > 0:
+                    return (
+                        f"### ✅ 保存成功\n已更新 {success_count}/{processed_count} 个关键词的选中状态",
+                        "## ℹ️ 系统状态\n关键词选中状态已保存"
+                    )
+                else:
+                    return (
+                        f"### ⚠️ 没有更新\n处理了 {processed_count} 行，但没有关键词被更新。可能是ID不存在于数据库中，请先提取关键词。",
+                        "## ℹ️ 系统状态\n没有关键词状态被更改"
+                    )
+                
+            except Exception as e:
+                LOG.error(f"保存关键词选中状态时出错: {e}")
+                import traceback
+                LOG.error(traceback.format_exc())
+                return (
+                    f"### ❌ 保存失败\n{str(e)}",
+                    f"## ℹ️ 系统状态\n关键词选中状态保存失败: {str(e)}"
                 )
         
         def preview_burn_video(video_selection):
@@ -1631,17 +1848,25 @@ def create_main_interface():
             outputs=[subtitle_video_dropdown]
         )
         
+        # 提取关键词
         extract_button.click(
             extract_keywords,
             inputs=[subtitle_video_dropdown, coca_checkbox],
-            outputs=[keywords_result, status_md, keywords_table]
+            outputs=[keywords_result, status_md, keywords_table, save_keywords_btn]
         )
         
         # 查询关键词
         query_keywords_btn.click(
             query_keywords,
             inputs=[subtitle_video_dropdown],
-            outputs=[keywords_result, status_md, keywords_table]
+            outputs=[keywords_result, status_md, keywords_table, save_keywords_btn]
+        )
+        
+        # 保存关键词选中状态
+        save_keywords_btn.click(
+            save_keywords_selection,
+            inputs=[keywords_table, subtitle_video_dropdown],
+            outputs=[keywords_result, status_md]
         )
         
         # 步骤4: 视频烧制
