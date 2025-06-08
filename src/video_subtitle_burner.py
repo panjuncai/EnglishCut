@@ -333,8 +333,14 @@ class VideoSubtitleBurner:
             meaning = escape_text(keyword_text.get('meaning', ''))
             
             if word:
-                # 字体大小设置
-                word_fontsize = 116     # 英文单词字体大小 - 英文大字
+                # 字体大小设置 - 根据单词长度自适应调整
+                # 短单词用大字体(116px)，长单词用小字体(64px)
+                original_word = keyword_text.get('word', '')
+                if len(original_word) > 10:  # 超过8个字母就用小字体
+                    word_fontsize = 64     # 较长单词使用较小字体
+                else:
+                    word_fontsize = 116    # 短单词使用大字体
+                
                 meaning_fontsize = 48   # 中文释义字体大小 - 中文中字
                 phonetic_fontsize = 26  # 音标字体大小 - 音标小字
                 
@@ -344,23 +350,31 @@ class VideoSubtitleBurner:
                 line_height_2 = 60   # 第二行(中文小字)到第三行(音标小字)的行高
                 padding_y = 30  # 垂直内边距
                 
-                # 计算三行文本的垂直位置
+                # 计算三行文本的垂直位置 - 如果是小字体，调整Y坐标
                 word_y = base_y + padding_y
+                if len(original_word) > 10:
+                    word_y += 15  # 长单词小字体时，适当下移以居中
+                
                 meaning_y = word_y + line_height_1
                 phonetic_y = meaning_y + line_height_2
                 
-                # 根据单词长度调整宽度
-                # 更精确地估算字符宽度（考虑更新的字体大小）
-                word_width = len(keyword_text.get('word', '')) * 48      # 128px字体下英文字符约48像素
-                meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 64px字体下中文字符约36像素
+                # 根据单词长度调整宽度和估算字符宽度
+                if len(original_word) > 10:
+                    # 小字体(64px)下的估算宽度
+                    word_width = len(original_word) * 30  # 64px字体下英文字符约30像素
+                else:
+                    # 大字体(116px)下的估算宽度
+                    word_width = len(original_word) * 48  # 116px字体下英文字符约48像素
+                
+                meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 48px字体下中文字符约36像素
                 phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 26px字体下音标字符约10像素
                 
                 # 取最宽的文本长度
                 max_text_len = max(word_width, meaning_width, phonetic_width)
                 
-                # 计算宽度，使用更小的内边距
-                padding_x = 60  # 左右各30像素的内边距
-                rect_width = max(250, min(max_text_len + padding_x, 700))
+                # 计算宽度，确保有足够边距
+                padding_x = 80  # 左右各40像素的内边距，增加以确保长单词也能显示
+                rect_width = max(300, min(max_text_len + padding_x, 700))
                 center_x = 360  # 屏幕中心水平坐标
                 rect_x = center_x - rect_width/2
                 
