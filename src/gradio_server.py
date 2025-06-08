@@ -85,7 +85,7 @@ def load_subtitle_videos():
             LOG.warning("⚠️ 数据库中没有系列数据")
             return []
         
-        # LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
+        LOG.info(f"实时加载字幕视频列表，查询到 {len(series_list)} 条系列数据")
         
         # 准备下拉选项
         options = []

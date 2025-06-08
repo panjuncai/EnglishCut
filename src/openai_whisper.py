@@ -159,6 +159,7 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         
         english_text = result["text"]
         chunks = result.get("chunks", [])
+        LOG.info(f"🌏 英文转录chunks: {chunks}")
         
         # 如果需要双语，翻译英文为中文
         chinese_chunks = []
@@ -167,10 +168,7 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
         if return_bilingual:
             LOG.info("🌏 开始使用GPT-4o-mini生成中文翻译...")
             
-            # 翻译整体文本
-            chinese_text = translate_text(english_text)
-            
-            # 翻译每个时间戳片段
+            # 只翻译每个时间戳片段，不再翻译整体文本
             for chunk in chunks:
                 english_chunk_text = chunk.get("text", "").strip()
                 if english_chunk_text:
@@ -179,6 +177,9 @@ def asr(audio_file, task="transcribe", return_bilingual=False):
                         "text": chinese_chunk_text,
                         "timestamp": chunk.get("timestamp", [None, None])
                     })
+            
+            # 将所有中文片段合并为整体中文文本，用于兼容性
+            chinese_text = " ".join([chunk.get("text", "") for chunk in chinese_chunks])
         
         inference_time = time.time() - inference_start
         total_time = time.time() - start_time
