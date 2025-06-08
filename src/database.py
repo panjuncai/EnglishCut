@@ -309,8 +309,8 @@ class DatabaseManager:
             
             for subtitle in subtitles:
                 # 替换英文和中文文本中的单引号为反引号
-                english_text = subtitle.get('english_text', '').replace("'", "`") if subtitle.get('english_text') else ''
-                chinese_text = subtitle.get('chinese_text', '').replace("'", "`") if subtitle.get('chinese_text') else ''
+                english_text = subtitle.get('english_text', '').replace("'", "`").replace(":","：") if subtitle.get('english_text') else ''
+                chinese_text = subtitle.get('chinese_text', '').replace("'", "`").replace(":","：") if subtitle.get('chinese_text') else ''
                 
                 cursor.execute("""
                     INSERT INTO t_subtitle (series_id, begin_time, end_time, english_text, chinese_text)
@@ -355,9 +355,9 @@ class DatabaseManager:
                     continue
                 
                 # 替换单词、音标和解释文本中的单引号为反引号
-                key_word = keyword.get('key_word', '').replace("'", "`") if keyword.get('key_word') else ''
-                phonetic_symbol = keyword.get('phonetic_symbol', '').replace("'", "`") if keyword.get('phonetic_symbol') else ''
-                explain_text = keyword.get('explain_text', '').replace("'", "`") if keyword.get('explain_text') else ''
+                key_word = keyword.get('key_word', '').replace("'", "`").replace(":","：") if keyword.get('key_word') else ''
+                phonetic_symbol = keyword.get('phonetic_symbol', '').replace("'", "`").replace(":","：") if keyword.get('phonetic_symbol') else ''
+                explain_text = keyword.get('explain_text', '').replace("'", "`").replace(":","：") if keyword.get('explain_text') else ''
                 
                 # 获取coca值
                 coca_value = keyword.get('coca', None)

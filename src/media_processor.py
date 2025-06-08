@@ -75,14 +75,28 @@ class MediaProcessor:
             
             # 如果只需要预处理，那么在这里就返回结果
             if only_preprocess:
+                # 获取原始视频路径（如果有）
+                original_video_path = None
+                if preprocess_result and 'original_path' in preprocess_result:
+                    original_video_path = preprocess_result['original_path']
+                
                 # 保存到数据库，传递带有duration的字典
                 duration_info = {'audio_duration': video_duration}
-                self._save_to_database(file_info, duration_info, {}, False, processed_video_path)
+                self._save_to_database(
+                    file_info, 
+                    duration_info, 
+                    {}, 
+                    False, 
+                    processed_video_path,
+                    None,  # existing_series_id
+                    original_video_path  # 添加原始视频路径
+                )
                 
                 return {
                     'success': True,
                     'file_type': file_info['type'],
                     'processed_video_path': processed_video_path,
+                    'original_video_path': original_video_path,  # 添加原始视频路径到返回值
                     'duration': video_duration,
                     'message': '视频预处理完成'
                 }
@@ -132,7 +146,7 @@ class MediaProcessor:
             )
             
             # 保存到数据库 - 即使是skip_preprocess模式也要保存字幕
-            self._save_to_database(file_info, recognition_result, subtitle_result, enable_translation, processed_video_path, existing_series_id)
+            self._save_to_database(file_info, recognition_result, subtitle_result, enable_translation, processed_video_path, existing_series_id, file_info.get('original_path'))
             
             # 清理临时文件
             self._cleanup_temp_files()
@@ -171,6 +185,21 @@ class MediaProcessor:
             # 保存到input目录下 (使用绝对路径)
             rel_output_path = os.path.join(input_dir, output_filename)
             output_path = os.path.abspath(rel_output_path)
+            
+            # 复制原始视频到input目录
+            original_output_filename = f"{base_name}.mp4"
+            original_output_path = os.path.join(input_dir, original_output_filename)
+            original_output_abs_path = os.path.abspath(original_output_path)
+            
+            # 复制原始视频文件
+            import shutil
+            try:
+                LOG.info(f"🔄 复制原始视频到input目录: {original_output_path}")
+                shutil.copy2(video_path, original_output_abs_path)
+                LOG.info(f"✅ 原始视频复制成功: {original_output_abs_path}")
+            except Exception as e:
+                LOG.error(f"❌ 复制原始视频失败: {str(e)}")
+                # 复制失败不影响后续处理
             
             LOG.info(f"🔄 开始对视频进行9:16比例预处理: {video_path}")
             
@@ -220,7 +249,8 @@ class MediaProcessor:
                 LOG.info(f"✅ 视频9:16预处理成功: {output_path}")
                 return {
                     'path': output_path,
-                    'duration': duration
+                    'duration': duration,
+                    'original_path': original_output_abs_path  # 返回原始视频路径
                 }
             else:
                 LOG.error(f"❌ 视频9:16预处理失败: {stderr}")
@@ -230,7 +260,7 @@ class MediaProcessor:
             LOG.error(f"❌ 视频9:16预处理出错: {str(e)}")
             return None
     
-    def _save_to_database(self, file_info, recognition_result, subtitle_result, is_bilingual, processed_video_path=None, existing_series_id=None):
+    def _save_to_database(self, file_info, recognition_result, subtitle_result, is_bilingual, processed_video_path=None, existing_series_id=None, original_video_path=None):
         """
         保存处理结果到数据库
         
@@ -241,6 +271,7 @@ class MediaProcessor:
         - is_bilingual: 是否双语
         - processed_video_path: 预处理后的视频路径
         - existing_series_id: 现有的系列ID (如果有)
+        - original_video_path: 原始视频路径 (如果有)
         """
         try:
             LOG.info(f"🔄 开始保存到数据库: 文件={file_info.get('name', 'Unknown')}, 双语={is_bilingual}")
@@ -262,14 +293,26 @@ class MediaProcessor:
                 )
                 LOG.info(f"📁 创建媒体系列成功: ID={series_id}")
                 
-                # 如果有预处理的9:16视频，更新系列信息
+                # 更新系列视频信息
+                update_params = {}
+                
+                # 如果有预处理的9:16视频，添加到更新参数
                 if processed_video_path:
+                    update_params['new_name'] = os.path.basename(processed_video_path)
+                    update_params['new_file_path'] = processed_video_path
+                
+                # 如果有原始视频路径，优先使用传入的参数，否则使用file_info中的
+                # 注意：这些字段在update_series_video_info方法中不存在
+                # 应该已经在create_series时处理了原始视频路径
+                # 所以这里不再需要传递file_path和name参数
+                
+                # 执行更新
+                if update_params:
                     db_manager.update_series_video_info(
                         series_id,
-                        new_name=os.path.basename(processed_video_path),
-                        new_file_path=processed_video_path
+                        **update_params
                     )
-                    LOG.info(f"🔄 更新系列的9:16预处理视频信息: {processed_video_path}")
+                    LOG.info(f"🔄 更新系列信息: {update_params}")
             
             # 2. 准备字幕数据
             subtitles_data = []
