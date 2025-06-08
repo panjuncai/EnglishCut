@@ -539,6 +539,197 @@ class VideoSubtitleBurner:
         # LOG.debug(f"生成的滤镜字符串: {filter_str}")
         return filter_str
     
+    def _build_keywords_only_filter(self, top_text: str, keyword_text: Dict = None) -> str:
+        """
+        构建只有顶部标题和关键词的FFmpeg视频滤镜，不添加底部字幕区域
+        
+        参数:
+        - top_text: 顶部文字
+        - keyword_text: 重点单词信息，格式为 {"word": "text", "phonetic": "音标", "meaning": "释义"}
+        
+        返回:
+        - str: FFmpeg滤镜字符串
+        """
+        # 转义文本中的特殊字符，防止FFmpeg命令解析错误
+        def escape_text(text):
+            if not text:
+                return ""
+            # 转义FFmpeg命令中的特殊字符，特别是:,'等会影响命令解析的字符
+            # 单引号需要特别处理，在FFmpeg中使用\'转义
+            escaped = text.replace("\\", "\\\\").replace(":", "\\\\:").replace("'", "`")
+            # 逗号和等号也可能导致解析问题
+            escaped = escaped.replace(",", "\\\\,").replace("=", "\\\\=")
+            return escaped
+        
+        # 转义各文本
+        top_text_escaped = escape_text(top_text)
+        
+        # 检查字体路径，优先使用抖音字体，找不到再使用苹方
+        douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
+        
+        # 专门用于音标的字体，优先使用支持IPA的字体
+        phonetic_fonts = [
+            '/Users/panjc/Library/Fonts/NotoSans-Regular.ttf',  # Google Noto字体如果已安装
+        ]
+        
+        # 选择一个可用的音标字体
+        phonetic_font = None
+        for font in phonetic_fonts:
+            if os.path.exists(font):
+                phonetic_font = font
+                break
+        
+        if not phonetic_font:
+            LOG.warning("未找到合适的音标字体，将使用常规字体，可能导致音标显示不完整")
+            phonetic_font = douyin_font  # 如果找不到专用字体，退回到常规字体
+        
+        # 备选字体
+        system_fonts = [
+            '/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc',  # 苹方
+            '/System/Library/Fonts/STHeiti Light.ttc',  # 黑体-简 细体
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',  # 冬青黑体
+            'Arial.ttf'  # 默认Arial
+        ]
+        
+        # 检查抖音字体是否存在
+        if not os.path.exists(douyin_font):
+            LOG.warning(f"警告: 抖音字体文件不存在: {douyin_font}")
+            # 找到第一个存在的系统字体
+            for font in system_fonts:
+                if os.path.exists(font):
+                    LOG.info(f"使用备选字体: {font}")
+                    douyin_font = font
+                    break
+        
+        # 视频滤镜：假设输入已经是9:16比例的视频，只添加顶部区域和关键词
+        filter_chain = [
+            # 保持视频原始尺寸（应该已经是720:1280）
+            "scale=720:1280",  # 确保尺寸一致
+            
+            # 第1步：顶部区域 - 创建完全不透明的黑色背景
+            "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
+            
+            # 第2步：添加顶部文字（调大白色字体，使用粗体字体文件）
+            f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5",
+        ]
+        
+        # 第3步：如果提供了重点单词信息，添加单词展示区域
+        if keyword_text and isinstance(keyword_text, dict):
+            # 获取单词信息并转义
+            word = escape_text(keyword_text.get('word', ''))
+            phonetic = escape_text(keyword_text.get('phonetic', ''))
+            meaning = escape_text(keyword_text.get('meaning', ''))
+            
+            if word:
+                # 字体大小设置 - 根据单词长度自适应调整
+                # 短单词用大字体，长单词用小字体
+                original_word = keyword_text.get('word', '')
+                if len(original_word) > 10:  # 超过10个字母就用小字体
+                    word_fontsize = 64     # 较长单词使用较小字体
+                else:
+                    word_fontsize = 152    # 短单词使用更大字体
+                
+                meaning_fontsize = 48   # 中文释义字体大小 - 中文中字
+                phonetic_fontsize = 24  # 音标字体大小 - 音标小字
+                
+                # 计算文本垂直位置和行间距
+                # 根据单词长度调整垂直位置
+                if len(original_word) > 10:
+                    base_y = 800  # 矩形框顶部Y坐标
+                else:  # 短单词
+                    base_y = 750  # 短单词时矩形框整体上移50像素，避免与底部重叠
+                    
+                line_height_1 = 150  # 第一行(英文大字)到第二行(中文小字)的行高，增加高度以适应更大字体
+                line_height_2 = 70   # 第二行(中文小字)到第三行(音标小字)的行高
+                padding_y = 30  # 垂直内边距
+                
+                # 计算三行文本的垂直位置 - 如果是小字体，调整Y坐标
+                word_y = base_y + padding_y
+                if len(original_word) > 10:
+                    word_y -= 10  # 长单词时整体上移10像素
+                
+                # 根据单词长度调整行间距
+                if len(original_word) > 10:
+                    # 长单词时，减小行间距使布局更紧凑
+                    adjusted_line_height_1 = 90  # 减小第一行到第二行的距离
+                    adjusted_line_height_2 = 60  # 减小第二行到第三行的距离
+                else:
+                    # 短单词时使用正常行间距
+                    adjusted_line_height_1 = line_height_1
+                    adjusted_line_height_2 = line_height_2
+                
+                # 计算中文和音标位置（根据单词长度调整）
+                meaning_y = word_y + adjusted_line_height_1
+                phonetic_y = meaning_y + adjusted_line_height_2
+                
+                # 根据单词长度调整宽度和估算字符宽度
+                if len(original_word) > 10:
+                    # 小字体(64px)下的估算宽度
+                    word_width = len(original_word) * 30  # 64px字体下英文字符约30像素
+                else:
+                    # 大字体(152px)下的估算宽度
+                    word_width = len(original_word) * 60  # 152px字体下英文字符约60像素
+                
+                meaning_width = len(keyword_text.get('meaning', '')) * 36 if keyword_text.get('meaning', '') else 0   # 48px字体下中文字符约36像素
+                phonetic_width = len(keyword_text.get('phonetic', '')) * 10 if keyword_text.get('phonetic', '') else 0  # 24px字体下音标字符约10像素
+                
+                # 取最宽的文本长度
+                max_text_len = max(word_width, meaning_width, phonetic_width)
+                
+                # 计算宽度，确保有足够边距
+                padding_x = 100  # 左右各50像素的内边距，增加以确保更大字体有足够空间
+                rect_width = max(350, min(max_text_len + padding_x, 700))
+                center_x = 360  # 屏幕中心水平坐标
+                rect_x = center_x - rect_width/2
+                
+                # 计算矩形高度，考虑不同行高
+                if meaning and phonetic:
+                    if len(original_word) > 10:
+                        # 长单词情况下，三行内容需要更多空间
+                        rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + padding_y + 20
+                    else:
+                        # 短单词+大字体情况下使用更大的高度
+                        rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 30
+                elif meaning:
+                    if len(original_word) > 10:
+                        # 长单词+中文释义情况
+                        rect_height = padding_y + adjusted_line_height_1 + padding_y
+                    else:
+                        # 短单词+大字体+中文释义情况
+                        rect_height = padding_y + line_height_1 + padding_y + 20
+                elif phonetic:
+                    if len(original_word) > 10:
+                        # 长单词+音标情况
+                        rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + 20
+                    else:
+                        # 短单词+大字体+音标情况
+                        rect_height = padding_y + line_height_1 + line_height_2 + 30
+                else:
+                    # 只有单词一行
+                    if len(original_word) > 10:
+                        rect_height = padding_y + 90 + padding_y  # 长单词行高
+                    else:
+                        rect_height = padding_y + 120 + padding_y  # 短单词大字体行高
+                
+                # 添加亮黄色背景框 - 使用亮黄色 #FFFF00
+                filter_chain.append(f"drawbox=x={rect_x}:y={base_y}:w={rect_width}:h={rect_height}:color=#FFFF00@1.0:t=fill")
+                
+                # 在背景框上添加文本
+                # 添加单词文本（英文单词）
+                filter_chain.append(f"drawtext=text='{word}':fontcolor=black:fontsize={word_fontsize}:x={center_x}-text_w/2:y={word_y}:fontfile='{douyin_font}'")
+                
+                # 如果有中文释义，添加释义文本
+                if meaning:
+                    filter_chain.append(f"drawtext=text='{meaning}':fontcolor=black:fontsize={meaning_fontsize}:x={center_x}-text_w/2:y={meaning_y}:fontfile='{douyin_font}'")
+                
+                # 如果有音标，添加音标文本
+                if phonetic:
+                    filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=black:fontsize={phonetic_fontsize}:x={center_x}-text_w/2:y={phonetic_y}:fontfile='{phonetic_font}'")
+        
+        # 返回滤镜字符串
+        filter_str = ','.join(filter_chain)
+        return filter_str
+    
     def burn_video_with_keywords(self, 
                                 input_video: str, 
                                 output_video: str, 
@@ -1038,6 +1229,411 @@ class VideoSubtitleBurner:
                 progress_callback(f"❌ {error_msg}")
             LOG.error(error_msg)
             return None
+    
+    def process_keywords_only_video(self, 
+                                   series_id: int, 
+                                   output_dir: str = "input",
+                                   title_text: str = "",
+                                   progress_callback=None) -> Optional[str]:
+        """
+        处理只烧制关键词（没有字幕）的视频
+        
+        参数:
+        - series_id: 系列ID
+        - output_dir: 输出目录，默认为input
+        - title_text: 顶部标题栏文字
+        - progress_callback: 进度回调函数
+        
+        返回:
+        - str: 输出视频路径，失败返回None
+        """
+        try:
+            if progress_callback:
+                progress_callback("🔍 开始处理只烧制关键词的视频...")
+            
+            # 获取系列信息
+            series_list = db_manager.get_series()
+            target_series = None
+            for series in series_list:
+                if series['id'] == series_id:
+                    target_series = series
+                    break
+            
+            if not target_series:
+                if progress_callback:
+                    progress_callback("❌ 找不到指定的系列")
+                return None
+            
+            # 检查是否存在预处理的9:16视频
+            input_video = None
+            if 'new_file_path' in target_series and target_series['new_file_path'] and os.path.exists(target_series['new_file_path']):
+                input_video = target_series['new_file_path']
+                if progress_callback:
+                    progress_callback(f"📹 使用预处理的9:16视频: {os.path.basename(input_video)}")
+            else:
+                # 获取原视频路径
+                input_video = target_series.get('file_path')
+                if not input_video or not os.path.exists(input_video):
+                    if progress_callback:
+                        progress_callback("❌ 找不到视频文件")
+                    return None
+                
+                if progress_callback:
+                    progress_callback(f"📹 使用原始视频文件: {os.path.basename(input_video)}")
+            
+            # 获取烧制数据
+            burn_data = self.get_key_words_for_burning(series_id)
+            if not burn_data:
+                if progress_callback:
+                    progress_callback("⚠️ 没有找到符合条件的重点单词")
+                return None
+            
+            # 筛选出有关键词的段落
+            keyword_data = [item for item in burn_data if item['has_keyword']]
+            if not keyword_data:
+                if progress_callback:
+                    progress_callback("⚠️ 没有找到有关键词的段落")
+                return None
+            
+            if progress_callback:
+                progress_callback(f"📚 找到 {len(keyword_data)} 个有关键词的段落用于烧制")
+            
+            # 准备输出路径
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 获取原始文件名中的基础部分（例如从9_1.mp4中提取9）
+            input_basename = os.path.basename(input_video)
+            if "_" in input_basename:
+                base_name = input_basename.split("_")[0]  # 获取下划线前的部分（例如9）
+            else:
+                # 如果没有下划线，直接使用文件名（不含扩展名）
+                base_name = os.path.splitext(input_basename)[0]
+            
+            # 生成新的文件名：基础名称_2.mp4
+            output_video = os.path.join(output_dir, f"{base_name}_2.mp4")
+            
+            if progress_callback:
+                progress_callback(f"📋 输入视频: {input_basename}, 输出视频: {base_name}_2.mp4")
+            
+            # 执行烧制 - 只处理有关键词的段落
+            import subprocess
+            
+            if progress_callback:
+                progress_callback("🎬 开始只烧制关键词处理...")
+            
+            # 处理每个有关键词的段落
+            successfully_processed_segments = []  # 跟踪成功处理的片段
+            failed_segments = []  # 跟踪失败的片段
+            
+            for i, item in enumerate(keyword_data):
+                try:
+                    # 记录开始处理此片段
+                    LOG.info(f"开始处理第 {i+1}/{len(keyword_data)} 个关键词片段")
+                    
+                    if progress_callback and i % 10 == 0:  # 每处理10个关键词更新一次进度
+                        progress_callback(f"🔄 处理关键词 {i+1}/{len(keyword_data)}: {item['keyword']}")
+                    
+                    # 提取时间段
+                    start_time = item['begin_time']
+                    end_time = item['end_time']
+                    
+                    # 检查时间段是否有效
+                    if end_time <= start_time:
+                        LOG.warning(f"片段 {i} 的时间段无效: {start_time}-{end_time}，尝试修复")
+                        # 修复时间段，确保至少有0.1秒长度
+                        end_time = start_time + 0.1
+                    
+                    duration = end_time - start_time
+                    LOG.info(f"片段 {i}: 时间 {start_time:.2f}-{end_time:.2f}, 时长: {duration:.2f}秒")
+                    
+                    # 为当前时间段创建临时文件名
+                    # 第一步：原视频裁剪后的临时文件
+                    temp_segment_path = os.path.join(self.temp_dir, f"temp_segment_{i}.mp4")
+                    # 第二步：添加关键词后的临时文件
+                    processed_segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    
+                    # 裁剪当前时间段的视频
+                    segment_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', input_video,
+                        '-ss', str(start_time),
+                        '-to', str(end_time),
+                        '-c:v', 'libx264', '-c:a', 'aac',
+                        '-vsync', '2',  # 保持视频同步
+                        temp_segment_path
+                    ]
+                    
+                    LOG.info(f"执行裁剪命令: {' '.join(segment_cmd)}")
+                    
+                    # 执行裁剪命令
+                    proc = subprocess.Popen(
+                        segment_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        universal_newlines=True
+                    )
+                    stdout, stderr = proc.communicate()
+                    
+                    # 检查裁剪是否成功
+                    if proc.returncode != 0:
+                        LOG.error(f"片段 {i} 裁剪失败: {stderr}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    # 验证裁剪后的文件是否存在且有效
+                    if not os.path.exists(temp_segment_path) or os.path.getsize(temp_segment_path) == 0:
+                        LOG.error(f"片段 {i} 裁剪后的文件无效: {temp_segment_path}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    # 构建关键词信息
+                    keyword_info = {
+                        'word': item['keyword'],
+                        'phonetic': item['phonetic'],
+                        'meaning': item['explanation']
+                    }
+                    
+                    # 为当前片段应用视频滤镜 - 使用只有关键词的滤镜
+                    video_filter = self._build_keywords_only_filter(title_text, keyword_info)
+                    
+                    process_cmd = [
+                        'ffmpeg', '-y',
+                        '-i', temp_segment_path,
+                        '-vf', video_filter,
+                        '-aspect', '9:16',  # 设置宽高比为9:16
+                        '-c:a', 'copy',  # 音频直接复制
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        processed_segment_path
+                    ]
+                    
+                    # 执行处理命令
+                    proc = subprocess.Popen(
+                        process_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        universal_newlines=True
+                    )
+                    stdout, stderr = proc.communicate()
+                    
+                    # 检查处理是否成功
+                    if proc.returncode != 0:
+                        LOG.error(f"片段 {i} 处理失败: {stderr}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    # 验证处理后的文件是否存在且有效
+                    if not os.path.exists(processed_segment_path) or os.path.getsize(processed_segment_path) == 0:
+                        LOG.error(f"片段 {i} 处理后的文件无效: {processed_segment_path}")
+                        failed_segments.append(i)
+                        continue
+                    
+                    successfully_processed_segments.append(i)
+                    
+                    # 向前端发送处理成功的信息
+                    if progress_callback and i % 5 == 0:  # 每5个片段更新一次，避免过于频繁
+                        current_progress = f"🎬 进度: {i+1}/{len(keyword_data)} | 成功: {len(successfully_processed_segments)}"
+                        current_progress += f" | 单词: {item['keyword']}"
+                        progress_callback(current_progress)
+                    
+                except Exception as e:
+                    LOG.error(f"处理片段 {i} 时发生异常: {str(e)}")
+                    import traceback
+                    LOG.error(traceback.format_exc())
+                    failed_segments.append(i)
+                    continue
+            
+            # 报告处理结果
+            LOG.info(f"成功处理 {len(successfully_processed_segments)}/{len(keyword_data)} 个关键词片段")
+            if failed_segments:
+                LOG.warning(f"失败片段索引: {failed_segments}")
+            
+            # 向前端发送处理结果统计
+            if progress_callback:
+                success_rate = len(successfully_processed_segments) / len(keyword_data) * 100 if keyword_data else 0
+                progress_callback(f"📊 成功处理 {len(successfully_processed_segments)}/{len(keyword_data)} 个片段 ({success_rate:.1f}%)")
+                if failed_segments:
+                    progress_callback(f"⚠️ {len(failed_segments)} 个片段处理失败")
+            
+            # 只处理成功的片段
+            if not successfully_processed_segments:
+                if progress_callback:
+                    progress_callback("❌ 没有成功处理的片段，无法生成视频")
+                return None
+            
+            # 创建包含所有处理过的片段的文件列表
+            segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+            LOG.info(f"创建片段列表文件: {segments_list_path}")
+            
+            with open(segments_list_path, 'w') as f:
+                for i in successfully_processed_segments:
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    # 再次验证文件存在
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        # 使用绝对路径，确保ffmpeg能找到文件
+                        abs_segment_path = os.path.abspath(segment_path)
+                        # 需要特殊处理路径中的单引号，替换为\'
+                        escaped_path = abs_segment_path.replace("'", "\\'")
+                        f.write(f"file '{escaped_path}'\n")
+                        LOG.info(f"添加片段到列表: {abs_segment_path}")
+                    else:
+                        LOG.warning(f"跳过无效片段文件: {segment_path}")
+            
+            if progress_callback:
+                progress_callback("🔄 合并所有视频片段...")
+                
+            # 使用concat过滤器合并所有片段
+            concat_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', segments_list_path,
+                '-c', 'copy',
+                output_video
+            ]
+            
+            # 执行合并命令
+            proc = subprocess.Popen(
+                concat_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            stdout, stderr = proc.communicate()
+            
+            # 检查输出文件
+            if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
+                if progress_callback:
+                    # 添加关键词统计信息
+                    progress_callback("📈 关键词统计:")
+                    progress_callback(f"  - 总计: {len(keyword_data)} 个单词")
+                    progress_callback("✅ 关键词烧制视频完成！")
+                
+                # 更新数据库中的烧制视频信息 - 更新为第二遍
+                db_manager.update_series_video_info(
+                    series_id,
+                    second_name=os.path.basename(output_video),
+                    second_file_path=output_video
+                )
+                
+                LOG.info(f"✅ 关键词烧制成功: {output_video}, 大小: {os.path.getsize(output_video)/1024/1024:.2f}MB")
+                return output_video
+            else:
+                # 合并失败，尝试替代方案
+                if progress_callback:
+                    progress_callback("⚠️ 标准合并失败，尝试替代方案...")
+                
+                LOG.warning(f"标准合并失败，尝试使用过滤器链方式合并")
+                
+                # 构建过滤器复杂链
+                filter_complex = []
+                for idx, i in enumerate(successfully_processed_segments):
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    # 确保文件存在
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        filter_complex.append(f"[{idx}:v][{idx}:a]")
+                
+                if not filter_complex:
+                    error_msg = "所有片段都无效，无法生成视频"
+                    if progress_callback:
+                        progress_callback(f"❌ {error_msg}")
+                    LOG.error(error_msg)
+                    return None
+                
+                # 构建备用命令
+                inputs = []
+                for i in successfully_processed_segments:
+                    segment_path = os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        inputs.extend(['-i', segment_path])
+                
+                # 如果只有一个片段，直接复制
+                if len(successfully_processed_segments) == 1:
+                    segment_path = os.path.join(self.temp_dir, f"segment_{successfully_processed_segments[0]}.mp4")
+                    if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                        fallback_cmd = [
+                            'ffmpeg', '-y',
+                            '-i', segment_path,
+                            '-c', 'copy',
+                            output_video
+                        ]
+                else:
+                    # 构建备用命令
+                    filter_str = ''.join(filter_complex) + f"concat=n={len(filter_complex)}:v=1:a=1[outv][outa]"
+                    fallback_cmd = [
+                        'ffmpeg', '-y'
+                    ] + inputs + [
+                        '-filter_complex', filter_str,
+                        '-map', '[outv]',
+                        '-map', '[outa]',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        output_video
+                    ]
+                
+                LOG.info(f"执行备用合并命令: {' '.join(fallback_cmd)}")
+                
+                if progress_callback:
+                    progress_callback("🔄 尝试备用合并方法...")
+                
+                # 执行备用命令
+                proc = subprocess.Popen(
+                    fallback_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                stdout, stderr = proc.communicate()
+                
+                if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
+                    if progress_callback:
+                        progress_callback("✅ 备用方法视频烧制完成！")
+                    
+                    # 更新数据库中的烧制视频信息 - 更新为第二遍
+                    db_manager.update_series_video_info(
+                        series_id,
+                        second_name=os.path.basename(output_video),
+                        second_file_path=output_video
+                    )
+                    
+                    LOG.info(f"✅ 备用方法关键词烧制成功: {output_video}")
+                    return output_video
+                else:
+                    error_msg = f"备用合并方法也失败: {stderr}"
+                    if progress_callback:
+                        progress_callback(f"❌ 烧制失败: {error_msg}")
+                    LOG.error(error_msg)
+                    return None
+                
+        except Exception as e:
+            error_msg = f"关键词视频烧制失败: {str(e)}"
+            if progress_callback:
+                progress_callback(f"❌ {error_msg}")
+            LOG.error(error_msg)
+            return None
+        finally:
+            # 清理临时文件
+            try:
+                # 清理临时视频文件
+                for i in range(len(keyword_data)):
+                    temp_files = [
+                        os.path.join(self.temp_dir, f"temp_segment_{i}.mp4"),
+                        os.path.join(self.temp_dir, f"segment_{i}.mp4")
+                    ]
+                    for temp_file in temp_files:
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                            LOG.debug(f"已删除临时文件: {temp_file}")
+                
+                # 删除临时片段列表文件
+                segments_list_path = os.path.join(self.temp_dir, "segments.txt")
+                if os.path.exists(segments_list_path):
+                    os.remove(segments_list_path)
+                    LOG.debug("已删除临时片段列表文件")
+                
+                LOG.info("🧹 临时文件清理完成")
+            except Exception as e:
+                LOG.warning(f"清理临时文件失败: {e}")
     
     def get_burn_preview(self, series_id: int) -> Dict:
         """

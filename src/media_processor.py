@@ -163,8 +163,8 @@ class MediaProcessor:
             
             # 生成输出文件路径
             base_name = os.path.splitext(video_name)[0]
-            # 使用更简洁的命名格式: 原文件名_1.mp4
-            output_filename = f"{base_name}_1.mp4"
+            # 使用更简洁的命名格式: 原文件名_0.mp4
+            output_filename = f"{base_name}_0.mp4"
             # 确保input目录存在
             input_dir = "input"
             os.makedirs(input_dir, exist_ok=True)

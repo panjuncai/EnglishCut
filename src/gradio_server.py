@@ -429,6 +429,8 @@ def create_main_interface():
                     with gr.Column():
                         preview_btn = gr.Button("预览烧制信息", variant="secondary", size="lg", elem_classes="burn-button")
                     with gr.Column():
+                        burn_keywords_btn = gr.Button("烧制关键词", variant="primary", size="lg", elem_classes="burn-button")
+                    with gr.Column():
                         burn_btn = gr.Button("烧制关键词+字幕视频", variant="primary", size="lg", elem_classes="burn-button")
                 
                 # 输出目录设置
@@ -1158,11 +1160,127 @@ def create_main_interface():
 
 请尝试刷新视频列表，选择其他视频或重试。
 """
-                    
             except Exception as e:
                 error_msg = f"烧制过程失败: {str(e)}"
                 LOG.error(error_msg)
                 yield error_msg, f"""### ❌ 烧制失败
+
+处理过程中发生错误: {str(e)}
+
+请检查日志获取详细信息，或联系技术支持。
+"""
+        
+        def burn_keywords_only_video(video_selection, output_dir):
+            """只烧制关键词视频（不带字幕）"""
+            if not video_selection:
+                yield "❌ 请先选择视频", "### ❌ 错误\n请先选择视频"
+                return
+            
+            try:
+                # 从选择中提取系列ID
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                else:
+                    parts = video_selection.split('-')
+                
+                if len(parts) >= 1:
+                    video_id_str = parts[0].strip()
+                    try:
+                        video_id = int(video_id_str)
+                        LOG.info(f"提取的视频ID: {video_id}")
+                    except ValueError:
+                        LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
+                        yield f"❌ '{video_id_str}' 不是有效的视频ID", f"### ❌ 错误\n无效的视频ID"
+                        return
+                else:
+                    yield "❌ 视频选择格式错误", "### ❌ 错误\n视频选择格式错误"
+                    return
+                
+                # 导入视频烧制模块
+                from video_subtitle_burner import video_burner
+                
+                progress_log = []
+                
+                def progress_callback(message):
+                    # 特殊处理进度消息，保留处理状态和成功率统计信息
+                    if message.startswith("🎬 进度:") or message.startswith("📊 成功处理"):
+                        # 查找并替换之前的相同类型消息
+                        for i, log in enumerate(progress_log):
+                            if log.startswith("🎬 进度:") and message.startswith("🎬 进度:"):
+                                progress_log[i] = message
+                                break
+                            elif log.startswith("📊 成功处理") and message.startswith("📊 成功处理"):
+                                progress_log[i] = message
+                                break
+                        else:
+                            # 如果没有找到相同类型的消息，就添加新消息
+                            progress_log.append(message)
+                    else:
+                        # 其他消息直接添加
+                        progress_log.append(message)
+                    
+                    # 返回格式化的日志，最近20条消息
+                    return '\n'.join(progress_log[-20:])
+                
+                # 开始烧制
+                yield "🔄 准备烧制...", "### ⏳ 处理中\n正在准备烧制关键词视频..."
+                
+                # 获取系列信息以显示更详细的进度
+                series_list = db_manager.get_series(video_id)
+                if series_list:
+                    series = series_list[0]
+                    input_video = series.get('new_file_path', '')
+                    if input_video:
+                        input_basename = os.path.basename(input_video)
+                        yield f"🔄 正在烧制：基于 {input_basename}", "### ⏳ 处理中\n正在处理视频文件..."
+                
+                # 执行只烧制关键词的处理
+                output_video = video_burner.process_keywords_only_video(
+                    video_id,
+                    output_dir,
+                    title_text="第二遍：重点词汇",
+                    progress_callback=progress_callback
+                )
+                
+                if output_video:
+                    # 将烧制视频路径保存到second_name和second_file_path
+                    db_manager.update_series_video_info(
+                        video_id,
+                        second_name=os.path.basename(output_video),
+                        second_file_path=output_video
+                    )
+                    
+                    final_message = "✅ 关键词烧制完成！"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), f"""### ✅ 关键词烧制成功
+
+**输出文件**：{os.path.basename(output_video)}  
+**保存路径**：{output_video}  
+**状态**：已更新到数据库  
+
+**说明**：基于输入视频生成只有关键词的视频（无字幕），存放在input文件夹下。
+    
+**点击刷新按钮**可以重新选择视频进行烧制。
+"""
+                else:
+                    final_message = "❌ 关键词烧制失败"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), """### ❌ 关键词烧制失败
+
+处理过程中发生错误，请检查日志获取详细信息。
+
+可能的原因：
+- 视频文件不存在或已损坏
+- 关键词数据不完整
+- 系统资源不足
+
+请尝试刷新视频列表，选择其他视频或重试。
+"""
+            except Exception as e:
+                error_msg = f"关键词烧制过程失败: {str(e)}"
+                LOG.error(error_msg)
+                yield error_msg, f"""### ❌ 关键词烧制失败
 
 处理过程中发生错误: {str(e)}
 
@@ -1351,6 +1469,12 @@ def create_main_interface():
         )
         
         # 烧制视频
+        burn_keywords_btn.click(
+            burn_keywords_only_video,
+            inputs=[burn_video_dropdown, output_dir_input],
+            outputs=[burn_progress, burn_result]
+        )
+        
         burn_btn.click(
             burn_video_with_progress,
             inputs=[burn_video_dropdown, output_dir_input],
