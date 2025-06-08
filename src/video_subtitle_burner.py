@@ -175,9 +175,9 @@ class VideoSubtitleBurner:
                 return ""
             # 转义FFmpeg命令中的特殊字符，特别是:,'等会影响命令解析的字符
             # 单引号需要特别处理，在FFmpeg中使用\'转义
-            escaped = text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+            escaped = text.replace("\\", "\\\\").replace(":", "\\\\:").replace("'", "`")
             # 逗号和等号也可能导致解析问题
-            escaped = escaped.replace(",", "\\,").replace("=", "\\=")
+            escaped = escaped.replace(",", "\\\\,").replace("=", "\\\\=")
             return escaped
         
         # 转义各文本
@@ -395,6 +395,7 @@ class VideoSubtitleBurner:
                         f"x=(w-text_w)/2:y={cn_base_y}-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
+                    # LOG.info(f"添加中文第一行: {cn_first_line_escaped}")
                     
                     # 添加中文第二行
                     filter_chain.append(
@@ -402,6 +403,7 @@ class VideoSubtitleBurner:
                         f"x=(w-text_w)/2:y={cn_base_y+40}-text_h/2+10:fontfile='{douyin_font}':"  # Y坐标下移10像素
                         f"bordercolor=black:borderw=3:box=0"
                     )
+                    # LOG.info(f"添加中文第二行: {cn_second_line_escaped}")
                 else:
                     # 中文行 - 位置在底部区域的下半部分（根据英文行数调整）
                     filter_chain.append(
@@ -534,7 +536,7 @@ class VideoSubtitleBurner:
         
         # 最后，对整个滤镜字符串进行额外检查，确保没有未转义的特殊字符
         filter_str = ','.join(filter_chain)
-        # LOG.debug(f"生成的滤镜字符串: {filter_str}")
+        LOG.debug(f"生成的滤镜字符串: {filter_str}")
         return filter_str
     
     def burn_video_with_keywords(self, 

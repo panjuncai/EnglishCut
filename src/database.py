@@ -251,7 +251,7 @@ class DatabaseManager:
     
     def create_subtitles(self, series_id: int, subtitles: List[Dict]) -> List[int]:
         """
-        批量创建字幕条目
+        为指定系列创建字幕
         
         参数:
         - series_id: 系列ID
@@ -266,6 +266,10 @@ class DatabaseManager:
             cursor = conn.cursor()
             
             for subtitle in subtitles:
+                # 替换英文和中文文本中的单引号为反引号
+                english_text = subtitle.get('english_text', '').replace("'", "`") if subtitle.get('english_text') else ''
+                chinese_text = subtitle.get('chinese_text', '').replace("'", "`") if subtitle.get('chinese_text') else ''
+                
                 cursor.execute("""
                     INSERT INTO t_subtitle (series_id, begin_time, end_time, english_text, chinese_text)
                     VALUES (?, ?, ?, ?, ?)
@@ -273,8 +277,8 @@ class DatabaseManager:
                     series_id,
                     subtitle.get('begin_time'),
                     subtitle.get('end_time'),
-                    subtitle.get('english_text', ''),
-                    subtitle.get('chinese_text', '')
+                    english_text,
+                    chinese_text
                 ))
                 
                 subtitle_ids.append(cursor.lastrowid)
@@ -308,14 +312,19 @@ class DatabaseManager:
                     LOG.warning(f"⚠️ 跳过无效的字幕ID: {keyword.get('key_word', '未知单词')}")
                     continue
                 
+                # 替换单词、音标和解释文本中的单引号为反引号
+                key_word = keyword.get('key_word', '').replace("'", "`") if keyword.get('key_word') else ''
+                phonetic_symbol = keyword.get('phonetic_symbol', '').replace("'", "`") if keyword.get('phonetic_symbol') else ''
+                explain_text = keyword.get('explain_text', '').replace("'", "`") if keyword.get('explain_text') else ''
+                
                 cursor.execute("""
                     INSERT INTO t_keywords (subtitle_id, key_word, phonetic_symbol, explain_text, coca)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
                     current_subtitle_id,
-                    keyword.get('key_word'),
-                    keyword.get('phonetic_symbol', ''),
-                    keyword.get('explain_text', ''),
+                    key_word,
+                    phonetic_symbol,
+                    explain_text,
                     keyword.get('coca', None)
                 ))
                 
@@ -650,6 +659,54 @@ class DatabaseManager:
         except Exception as e:
             LOG.error(f"❌ 删除关键词失败: {e}")
             return False
+
+    def update_all_quotes_to_backticks(self) -> Dict:
+        """
+        将所有字幕和关键词中的单引号(')替换为反引号(`)
+        
+        返回:
+        - Dict: 统计信息，包含更新的字幕数和关键词数
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 1. 更新字幕表中的英文和中文文本
+                cursor.execute("""
+                    UPDATE t_subtitle 
+                    SET english_text = REPLACE(english_text, "'", "`"),
+                        chinese_text = REPLACE(chinese_text, "'", "`")
+                    WHERE english_text LIKE '%''%' OR chinese_text LIKE '%''%'
+                """)
+                subtitle_count = cursor.rowcount
+                
+                # 2. 更新关键词表中的单词、音标和解释文本
+                cursor.execute("""
+                    UPDATE t_keywords
+                    SET key_word = REPLACE(key_word, "'", "`"),
+                        phonetic_symbol = REPLACE(phonetic_symbol, "'", "`"),
+                        explain_text = REPLACE(explain_text, "'", "`")
+                    WHERE key_word LIKE '%''%' OR phonetic_symbol LIKE '%''%' OR explain_text LIKE '%''%'
+                """)
+                keyword_count = cursor.rowcount
+                
+                conn.commit()
+                
+                LOG.info(f"✅ 单引号替换完成: 更新了 {subtitle_count} 条字幕和 {keyword_count} 个关键词")
+                return {
+                    "subtitle_count": subtitle_count,
+                    "keyword_count": keyword_count,
+                    "success": True
+                }
+                
+        except Exception as e:
+            LOG.error(f"❌ 单引号替换失败: {e}")
+            return {
+                "subtitle_count": 0,
+                "keyword_count": 0,
+                "success": False,
+                "error": str(e)
+            }
 
 # 全局数据库实例
 db_manager = DatabaseManager() 
