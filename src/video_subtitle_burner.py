@@ -13,7 +13,7 @@ from database import db_manager
 
 class VideoSubtitleBurner:
     """视频字幕烧制器"""
-    
+    short_word_length = 9
     def __init__(self):
         """初始化烧制器"""
         self.temp_dir = tempfile.mkdtemp(prefix="englishcut_burn_")
@@ -113,9 +113,10 @@ class VideoSubtitleBurner:
             return keywords[0]
         
         # 按COCA排名降序（数字大=频率低=重要度高），长度升序排序
+        # 确保当coca为None时，将其视为0而不是尝试取负值
         sorted_keywords = sorted(
             keywords,
-            key=lambda x: (-x.get('coca', 0), len(x.get('key_word', '')))
+            key=lambda x: (-(x.get('coca') or 0), len(x.get('key_word', '')))
         )
         
         selected = sorted_keywords[0]
@@ -432,7 +433,7 @@ class VideoSubtitleBurner:
                 # 字体大小设置 - 根据单词长度自适应调整
                 # 短单词用大字体，长单词用小字体
                 original_word = keyword_text.get('word', '')
-                if len(original_word) > 10:  # 超过10个字母就用小字体
+                if len(original_word) > self.short_word_length:  # 超过10个字母就用小字体
                     word_fontsize = 64     # 较长单词使用较小字体
                 else:
                     word_fontsize = 152    # 短单词使用更大字体
@@ -442,7 +443,7 @@ class VideoSubtitleBurner:
                 
                 # 计算文本垂直位置和行间距
                 # 根据单词长度调整垂直位置
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     base_y = 800  # 矩形框顶部Y坐标
                 else:  # 短单词
                     base_y = 750  # 短单词时矩形框整体上移50像素，避免与底部重叠
@@ -453,11 +454,11 @@ class VideoSubtitleBurner:
                 
                 # 计算三行文本的垂直位置 - 如果是小字体，调整Y坐标
                 word_y = base_y + padding_y
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     word_y -= 10  # 长单词时整体上移10像素
                 
                 # 根据单词长度调整行间距
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     # 长单词时，减小行间距使布局更紧凑
                     adjusted_line_height_1 = 90  # 减小第一行到第二行的距离
                     adjusted_line_height_2 = 60  # 减小第二行到第三行的距离
@@ -471,7 +472,7 @@ class VideoSubtitleBurner:
                 phonetic_y = meaning_y + adjusted_line_height_2
                 
                 # 根据单词长度调整宽度和估算字符宽度
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     # 小字体(64px)下的估算宽度
                     word_width = len(original_word) * 30  # 64px字体下英文字符约30像素
                 else:
@@ -492,21 +493,21 @@ class VideoSubtitleBurner:
                 
                 # 计算矩形高度，考虑不同行高
                 if meaning and phonetic:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词情况下，三行内容需要更多空间
                         rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + padding_y + 20
                     else:
                         # 短单词+大字体情况下使用更大的高度
                         rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 30
                 elif meaning:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词+中文释义情况
                         rect_height = padding_y + adjusted_line_height_1 + padding_y
                     else:
                         # 短单词+大字体+中文释义情况
                         rect_height = padding_y + line_height_1 + padding_y + 20
                 elif phonetic:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词+音标情况
                         rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + 20
                     else:
@@ -514,7 +515,7 @@ class VideoSubtitleBurner:
                         rect_height = padding_y + line_height_1 + line_height_2 + 30
                 else:
                     # 只有单词一行
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         rect_height = padding_y + 90 + padding_y  # 长单词行高
                     else:
                         rect_height = padding_y + 120 + padding_y  # 短单词大字体行高
@@ -624,7 +625,7 @@ class VideoSubtitleBurner:
                 # 字体大小设置 - 根据单词长度自适应调整
                 # 短单词用大字体，长单词用小字体
                 original_word = keyword_text.get('word', '')
-                if len(original_word) > 10:  # 超过10个字母就用小字体
+                if len(original_word) > self.short_word_length:  # 超过10个字母就用小字体
                     word_fontsize = 64     # 较长单词使用较小字体
                 else:
                     word_fontsize = 152    # 短单词使用更大字体
@@ -634,7 +635,7 @@ class VideoSubtitleBurner:
                 
                 # 计算文本垂直位置和行间距
                 # 根据单词长度调整垂直位置
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     base_y = 800  # 矩形框顶部Y坐标
                 else:  # 短单词
                     base_y = 750  # 短单词时矩形框整体上移50像素，避免与底部重叠
@@ -645,11 +646,11 @@ class VideoSubtitleBurner:
                 
                 # 计算三行文本的垂直位置 - 如果是小字体，调整Y坐标
                 word_y = base_y + padding_y
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     word_y -= 10  # 长单词时整体上移10像素
                 
                 # 根据单词长度调整行间距
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     # 长单词时，减小行间距使布局更紧凑
                     adjusted_line_height_1 = 90  # 减小第一行到第二行的距离
                     adjusted_line_height_2 = 60  # 减小第二行到第三行的距离
@@ -663,7 +664,7 @@ class VideoSubtitleBurner:
                 phonetic_y = meaning_y + adjusted_line_height_2
                 
                 # 根据单词长度调整宽度和估算字符宽度
-                if len(original_word) > 10:
+                if len(original_word) > self.short_word_length:
                     # 小字体(64px)下的估算宽度
                     word_width = len(original_word) * 30  # 64px字体下英文字符约30像素
                 else:
@@ -684,21 +685,21 @@ class VideoSubtitleBurner:
                 
                 # 计算矩形高度，考虑不同行高
                 if meaning and phonetic:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词情况下，三行内容需要更多空间
                         rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + padding_y + 20
                     else:
                         # 短单词+大字体情况下使用更大的高度
                         rect_height = padding_y + line_height_1 + line_height_2 + padding_y + 30
                 elif meaning:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词+中文释义情况
                         rect_height = padding_y + adjusted_line_height_1 + padding_y
                     else:
                         # 短单词+大字体+中文释义情况
                         rect_height = padding_y + line_height_1 + padding_y + 20
                 elif phonetic:
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         # 长单词+音标情况
                         rect_height = padding_y + adjusted_line_height_1 + adjusted_line_height_2 + 20
                     else:
@@ -706,7 +707,7 @@ class VideoSubtitleBurner:
                         rect_height = padding_y + line_height_1 + line_height_2 + 30
                 else:
                     # 只有单词一行
-                    if len(original_word) > 10:
+                    if len(original_word) > self.short_word_length:
                         rect_height = padding_y + 90 + padding_y  # 长单词行高
                     else:
                         rect_height = padding_y + 120 + padding_y  # 短单词大字体行高
@@ -1923,6 +1924,133 @@ class VideoSubtitleBurner:
                 progress_callback(f"❌ {error_msg}")
             LOG.error(error_msg)
             return None
+    
+    def merge_video_series(self, 
+                           first_video_path: str, 
+                           second_video_path: str, 
+                           third_video_path: str, 
+                           output_video: str,
+                           progress_callback=None) -> bool:
+        """
+        合并三个视频文件（第一遍、第二遍、第三遍）到一个输出文件
+        
+        参数:
+        - first_video_path: 第一遍视频路径
+        - second_video_path: 第二遍视频路径
+        - third_video_path: 第三遍视频路径
+        - output_video: 输出视频路径
+        - progress_callback: 进度回调函数
+        
+        返回:
+        - bool: 是否成功
+        """
+        try:
+            import subprocess
+            
+            if progress_callback:
+                progress_callback("🎬 开始合并三个视频文件...")
+            
+            # 检查输入文件是否存在
+            input_videos = []
+            
+            if first_video_path and os.path.exists(first_video_path):
+                input_videos.append(first_video_path)
+                if progress_callback:
+                    progress_callback(f"✅ 找到第一遍视频: {os.path.basename(first_video_path)}")
+            else:
+                if progress_callback:
+                    progress_callback("⚠️ 第一遍视频不存在，将跳过")
+            
+            if second_video_path and os.path.exists(second_video_path):
+                input_videos.append(second_video_path)
+                if progress_callback:
+                    progress_callback(f"✅ 找到第二遍视频: {os.path.basename(second_video_path)}")
+            else:
+                if progress_callback:
+                    progress_callback("⚠️ 第二遍视频不存在，将跳过")
+            
+            if third_video_path and os.path.exists(third_video_path):
+                input_videos.append(third_video_path)
+                if progress_callback:
+                    progress_callback(f"✅ 找到第三遍视频: {os.path.basename(third_video_path)}")
+            else:
+                if progress_callback:
+                    progress_callback("⚠️ 第三遍视频不存在，将跳过")
+            
+            if not input_videos:
+                if progress_callback:
+                    progress_callback("❌ 没有找到有效的视频文件，无法合并")
+                return False
+            
+            if progress_callback:
+                progress_callback(f"🔄 准备合并 {len(input_videos)} 个视频文件...")
+            
+            # 创建临时文件列表
+            segments_list_path = os.path.join(self.temp_dir, "merge_segments.txt")
+            with open(segments_list_path, 'w') as f:
+                for video_path in input_videos:
+                    # 使用绝对路径，确保ffmpeg能找到文件
+                    abs_path = os.path.abspath(video_path)
+                    # 需要特殊处理路径中的单引号，替换为\'
+                    escaped_path = abs_path.replace("'", "\\'")
+                    f.write(f"file '{escaped_path}'\n")
+                    LOG.info(f"添加视频到合并列表: {abs_path}")
+            
+            if progress_callback:
+                progress_callback("🔄 执行视频合并...")
+                
+            # 使用concat过滤器合并所有视频
+            concat_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', segments_list_path,
+                '-c', 'copy',  # 直接复制，不重新编码
+                output_video
+            ]
+            
+            LOG.info(f"执行合并命令: {' '.join(concat_cmd)}")
+            
+            # 执行合并命令
+            proc = subprocess.Popen(
+                concat_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            stdout, stderr = proc.communicate()
+            
+            # 检查输出文件
+            if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
+                if progress_callback:
+                    progress_callback("✅ 视频合并完成！")
+                LOG.info(f"✅ 视频合并成功: {output_video}")
+                return True
+            else:
+                error_msg = f"视频合并失败: {stderr}"
+                if progress_callback:
+                    progress_callback(f"❌ 合并失败: {error_msg}")
+                LOG.error(error_msg)
+                return False
+            
+        except Exception as e:
+            error_msg = f"视频合并失败: {str(e)}"
+            if progress_callback:
+                progress_callback(f"❌ {error_msg}")
+            LOG.error(error_msg)
+            import traceback
+            LOG.error(traceback.format_exc())
+            return False
+        finally:
+            # 清理临时文件
+            try:
+                # 删除临时片段列表文件
+                segments_list_path = os.path.join(self.temp_dir, "merge_segments.txt")
+                if os.path.exists(segments_list_path):
+                    os.remove(segments_list_path)
+                    LOG.debug("已删除临时合并列表文件")
+            except Exception as e:
+                LOG.warning(f"清理临时文件失败: {e}")
 
 # 全局实例
 video_burner = VideoSubtitleBurner() 

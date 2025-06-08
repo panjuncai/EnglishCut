@@ -408,6 +408,8 @@ def create_main_interface():
                         burn_keywords_btn = gr.Button("烧制关键词", variant="primary", size="lg", elem_classes="burn-button")
                     with gr.Column():
                         burn_btn = gr.Button("烧制关键词+字幕视频", variant="primary", size="lg", elem_classes="burn-button")
+                    with gr.Column():
+                        merge_btn = gr.Button("合并1-3", variant="primary", size="lg", elem_classes="burn-button")
                 
                 # 输出目录设置
                 with gr.Row(visible=False):
@@ -1817,6 +1819,124 @@ def create_main_interface():
 
 请检查日志获取详细信息，或联系技术支持。
 """
+                
+        def merge_videos(video_selection, output_dir):
+            """合并第一遍、第二遍和第三遍视频"""
+            if not video_selection:
+                yield "❌ 请先选择视频", "### ❌ 错误\n请先选择视频"
+                return
+            
+            try:
+                # 从选择中提取系列ID
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                else:
+                    parts = video_selection.split('-')
+                
+                if len(parts) >= 1:
+                    video_id_str = parts[0].strip()
+                    try:
+                        video_id = int(video_id_str)
+                        LOG.info(f"提取的视频ID: {video_id}")
+                    except ValueError:
+                        LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
+                        yield f"❌ '{video_id_str}' 不是有效的视频ID", f"### ❌ 错误\n无效的视频ID"
+                        return
+                else:
+                    yield "❌ 视频选择格式错误", "### ❌ 错误\n视频选择格式错误"
+                    return
+                
+                # 导入视频烧制模块
+                from video_subtitle_burner import video_burner
+                
+                progress_log = []
+                
+                def progress_callback(message):
+                    # 添加消息到日志列表
+                    progress_log.append(message)
+                    # 返回格式化的日志，最近20条消息
+                    return '\n'.join(progress_log[-20:])
+                
+                # 开始合并准备
+                yield "🔄 准备合并视频...", "### ⏳ 处理中\n正在准备合并视频..."
+                
+                # 获取系列信息以获取三个视频的路径
+                series_list = db_manager.get_series(video_id)
+                if not series_list:
+                    LOG.error(f"未找到ID为 {video_id} 的视频")
+                    yield "❌ 未找到选择的视频", "### ❌ 错误\n未找到视频信息"
+                    return
+                
+                series = series_list[0]
+                
+                # 获取三个视频的路径
+                first_video_path = series.get('first_file_path')
+                second_video_path = series.get('second_file_path')
+                third_video_path = series.get('third_file_path')
+                
+                # 检查视频路径
+                if not (first_video_path or second_video_path or third_video_path):
+                    yield "❌ 没有找到可用的视频文件", "### ❌ 错误\n请先烧制视频"
+                    return
+                
+                # 创建输出目录
+                os.makedirs("output", exist_ok=True)
+                
+                # 构建输出文件名
+                series_name = series.get('name', f"series_{video_id}")
+                output_filename = f"{series_name}"
+                output_path = os.path.abspath(os.path.join("output", output_filename))
+                
+                yield f"🔄 开始合并视频: {series_name}", "### ⏳ 处理中\n正在合并视频文件..."
+                
+                # 执行视频合并
+                success = video_burner.merge_video_series(
+                    first_video_path,
+                    second_video_path,
+                    third_video_path,
+                    output_path,
+                    progress_callback=progress_callback
+                )
+                
+                if success:
+                    final_message = "✅ 视频合并完成！"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), f"""### ✅ 视频合并成功
+
+**输出文件**：{output_filename}  
+**保存路径**：{output_path}  
+**状态**：已保存到output文件夹  
+
+**说明**：已将可用的1-3遍视频合并为一个文件。
+
+**点击刷新按钮**可以重新选择视频进行合并。
+"""
+                else:
+                    final_message = "❌ 视频合并失败"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), """### ❌ 视频合并失败
+
+处理过程中发生错误，请检查日志获取详细信息。
+
+可能的原因：
+- 视频文件不存在或已损坏
+- 文件格式不兼容
+- 系统资源不足
+
+请尝试刷新视频列表，选择其他视频或重试。
+"""
+            except Exception as e:
+                error_msg = f"视频合并过程失败: {str(e)}"
+                LOG.error(error_msg)
+                import traceback
+                LOG.error(traceback.format_exc())
+                yield error_msg, f"""### ❌ 视频合并失败
+
+处理过程中发生错误: {str(e)}
+
+请检查日志获取详细信息，或联系技术支持。
+"""
         
         # 实时刷新视频列表的函数
         def refresh_video_list():
@@ -2029,6 +2149,13 @@ def create_main_interface():
         
         burn_btn.click(
             burn_video_with_progress,
+            inputs=[burn_video_dropdown, output_dir_input],
+            outputs=[burn_progress, burn_result]
+        )
+
+        # 合并视频
+        merge_btn.click(
+            merge_videos,
             inputs=[burn_video_dropdown, output_dir_input],
             outputs=[burn_progress, burn_result]
         )
