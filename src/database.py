@@ -123,6 +123,16 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE t_series ADD COLUMN third_file_path TEXT")
                 LOG.info("📊 已添加 third_file_path 字段到 t_series 表")
             
+            # 添加 first_name 字段（如果不存在）
+            if 'first_name' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN first_name TEXT")
+                LOG.info("📊 已添加 first_name 字段到 t_series 表")
+            
+            # 添加 first_file_path 字段（如果不存在）
+            if 'first_file_path' not in columns:
+                cursor.execute("ALTER TABLE t_series ADD COLUMN first_file_path TEXT")
+                LOG.info("📊 已添加 first_file_path 字段到 t_series 表")
+            
             # 检查 t_keywords 表是否已有 coca 字段
             cursor.execute("PRAGMA table_info(t_keywords)")
             keyword_columns = [column[1] for column in cursor.fetchall()]
@@ -153,6 +163,7 @@ class DatabaseManager:
     
     def create_series(self, name: str, file_path: str = None, file_type: str = None, duration: float = None, 
                      new_name: str = None, new_file_path: str = None,
+                     first_name: str = None, first_file_path: str = None,
                      second_name: str = None, second_file_path: str = None,
                      third_name: str = None, third_file_path: str = None) -> int:
         """
@@ -165,10 +176,12 @@ class DatabaseManager:
         - duration: 时长（秒）
         - new_name: 烧制后的新视频名称 (9:16预处理视频)
         - new_file_path: 烧制后的新视频文件路径 (9:16预处理视频)
-        - second_name: 重点单词烧制视频名称
-        - second_file_path: 重点单词烧制视频文件路径
-        - third_name: 重点单词+字幕烧制视频名称
-        - third_file_path: 重点单词+字幕烧制视频文件路径
+        - first_name: 第一遍观影视频名称
+        - first_file_path: 第一遍观影视频文件路径
+        - second_name: 重点单词烧制视频名称 (第二遍)
+        - second_file_path: 重点单词烧制视频文件路径 (第二遍)
+        - third_name: 重点单词+字幕烧制视频名称 (第三遍)
+        - third_file_path: 重点单词+字幕烧制视频文件路径 (第三遍)
         
         返回:
         - series_id: 新创建的系列ID
@@ -178,11 +191,13 @@ class DatabaseManager:
             cursor.execute("""
                 INSERT INTO t_series (name, file_path, file_type, duration, 
                                      new_name, new_file_path,
+                                     first_name, first_file_path,
                                      second_name, second_file_path,
                                      third_name, third_file_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (name, file_path, file_type, duration, 
                  new_name, new_file_path,
+                 first_name, first_file_path,
                  second_name, second_file_path,
                  third_name, third_file_path))
             
@@ -193,6 +208,7 @@ class DatabaseManager:
             return series_id
     
     def update_series_video_info(self, series_id: int, new_name: str = None, new_file_path: str = None,
+                            first_name: str = None, first_file_path: str = None,
                             second_name: str = None, second_file_path: str = None,
                             third_name: str = None, third_file_path: str = None) -> bool:
         """
@@ -202,10 +218,12 @@ class DatabaseManager:
         - series_id: 系列ID
         - new_name: 烧制后的新视频名称 (9:16预处理视频)
         - new_file_path: 烧制后的新视频文件路径 (9:16预处理视频)
-        - second_name: 重点单词烧制视频名称
-        - second_file_path: 重点单词烧制视频文件路径
-        - third_name: 重点单词+字幕烧制视频名称
-        - third_file_path: 重点单词+字幕烧制视频文件路径
+        - first_name: 第一遍观影视频名称
+        - first_file_path: 第一遍观影视频文件路径
+        - second_name: 重点单词烧制视频名称 (第二遍)
+        - second_file_path: 重点单词烧制视频文件路径 (第二遍)
+        - third_name: 重点单词+字幕烧制视频名称 (第三遍)
+        - third_file_path: 重点单词+字幕烧制视频文件路径 (第三遍)
         
         返回:
         - bool: 是否更新成功
@@ -225,6 +243,14 @@ class DatabaseManager:
                 if new_file_path is not None:
                     update_fields.append("new_file_path = ?")
                     update_values.append(new_file_path)
+                
+                if first_name is not None:
+                    update_fields.append("first_name = ?")
+                    update_values.append(first_name)
+                
+                if first_file_path is not None:
+                    update_fields.append("first_file_path = ?")
+                    update_values.append(first_file_path)
                 
                 if second_name is not None:
                     update_fields.append("second_name = ?")

@@ -730,6 +730,66 @@ class VideoSubtitleBurner:
         filter_str = ','.join(filter_chain)
         return filter_str
     
+    def _build_no_subtitle_filter(self, top_text: str) -> str:
+        """
+        构建只有顶部标题的FFmpeg视频滤镜，不添加底部字幕区域和关键词
+        
+        参数:
+        - top_text: 顶部文字
+        
+        返回:
+        - str: FFmpeg滤镜字符串
+        """
+        # 转义文本中的特殊字符，防止FFmpeg命令解析错误
+        def escape_text(text):
+            if not text:
+                return ""
+            # 转义FFmpeg命令中的特殊字符，特别是:,'等会影响命令解析的字符
+            escaped = text.replace("\\", "\\\\").replace(":", "\\\\:").replace("'", "`")
+            # 逗号和等号也可能导致解析问题
+            escaped = escaped.replace(",", "\\\\,").replace("=", "\\\\=")
+            return escaped
+        
+        # 转义顶部文本
+        top_text_escaped = escape_text(top_text)
+        
+        # 检查字体路径，优先使用抖音字体，找不到再使用苹方
+        douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
+        
+        # 备选字体
+        system_fonts = [
+            '/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc',  # 苹方
+            '/System/Library/Fonts/STHeiti Light.ttc',  # 黑体-简 细体
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',  # 冬青黑体
+            'Arial.ttf'  # 默认Arial
+        ]
+        
+        # 检查抖音字体是否存在
+        if not os.path.exists(douyin_font):
+            LOG.warning(f"警告: 抖音字体文件不存在: {douyin_font}")
+            # 找到第一个存在的系统字体
+            for font in system_fonts:
+                if os.path.exists(font):
+                    LOG.info(f"使用备选字体: {font}")
+                    douyin_font = font
+                    break
+        
+        # 视频滤镜：假设输入已经是9:16比例的视频，只添加顶部区域
+        filter_chain = [
+            # 保持视频原始尺寸（应该已经是720:1280）
+            "scale=720:1280",  # 确保尺寸一致
+            
+            # 第1步：顶部区域 - 创建完全不透明的黑色背景
+            "drawbox=x=0:y=0:w=720:h=128:color=black@1.0:t=fill",  # 完全不透明的黑色背景
+            
+            # 第2步：添加顶部文字（调大白色字体，使用粗体字体文件）
+            f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=64-text_h/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1:box=1:boxcolor=black@0.2:boxborderw=5"
+        ]
+        
+        # 返回滤镜字符串
+        filter_str = ','.join(filter_chain)
+        return filter_str
+    
     def burn_video_with_keywords(self, 
                                 input_video: str, 
                                 output_video: str, 
@@ -1732,6 +1792,130 @@ class VideoSubtitleBurner:
                 LOG.info("🧹 临时文件清理完成")
         except Exception as e:
             LOG.warning(f"清理临时文件失败: {e}")
+    
+    def process_no_subtitle_video(self, 
+                                 series_id: int, 
+                                 output_dir: str = "input",
+                                 title_text: str = "",
+                                 progress_callback=None) -> Optional[str]:
+        """
+        处理无字幕视频，只添加顶部标题
+        
+        参数:
+        - series_id: 系列ID
+        - output_dir: 输出目录，默认为input
+        - title_text: 顶部标题栏文字
+        - progress_callback: 进度回调函数
+        
+        返回:
+        - str: 输出视频路径，失败返回None
+        """
+        try:
+            if progress_callback:
+                progress_callback("🔍 开始处理无字幕视频...")
+            
+            # 获取系列信息
+            series_list = db_manager.get_series()
+            target_series = None
+            for series in series_list:
+                if series['id'] == series_id:
+                    target_series = series
+                    break
+            
+            if not target_series:
+                if progress_callback:
+                    progress_callback("❌ 找不到指定的系列")
+                return None
+            
+            # 检查是否存在预处理的9:16视频
+            input_video = None
+            if 'new_file_path' in target_series and target_series['new_file_path'] and os.path.exists(target_series['new_file_path']):
+                input_video = target_series['new_file_path']
+                if progress_callback:
+                    progress_callback(f"📹 使用预处理的9:16视频: {os.path.basename(input_video)}")
+            else:
+                # 获取原视频路径
+                input_video = target_series.get('file_path')
+                if not input_video or not os.path.exists(input_video):
+                    if progress_callback:
+                        progress_callback("❌ 找不到视频文件")
+                    return None
+                
+                if progress_callback:
+                    progress_callback(f"📹 使用原始视频文件: {os.path.basename(input_video)}")
+            
+            # 准备输出路径
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 获取原始文件名中的基础部分（例如从9_0.mp4中提取9）
+            input_basename = os.path.basename(input_video)
+            if "_" in input_basename:
+                base_name = input_basename.split("_")[0]  # 获取下划线前的部分（例如9）
+            else:
+                # 如果没有下划线，直接使用文件名（不含扩展名）
+                base_name = os.path.splitext(input_basename)[0]
+            
+            # 生成新的文件名：基础名称_1.mp4
+            output_video = os.path.join(output_dir, f"{base_name}_1.mp4")
+            
+            if progress_callback:
+                progress_callback(f"📋 输入视频: {input_basename}, 输出视频: {base_name}_1.mp4")
+            
+            # 应用视频滤镜
+            video_filter = self._build_no_subtitle_filter(title_text)
+            
+            # 构建FFmpeg命令
+            import subprocess
+            
+            ffmpeg_cmd = [
+                'ffmpeg', '-y',
+                '-i', input_video,
+                '-vf', video_filter,
+                '-aspect', '9:16',  # 设置宽高比为9:16
+                '-c:a', 'copy',  # 音频直接复制
+                '-preset', 'medium',
+                '-crf', '23',
+                output_video
+            ]
+            
+            if progress_callback:
+                progress_callback("🔄 开始处理视频...")
+            
+            # 执行FFmpeg命令
+            proc = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            stdout, stderr = proc.communicate()
+            
+            # 检查是否成功
+            if proc.returncode == 0 and os.path.exists(output_video) and os.path.getsize(output_video) > 0:
+                # 更新数据库中的烧制视频信息
+                db_manager.update_series_video_info(
+                    series_id,
+                    first_name=os.path.basename(output_video),
+                    first_file_path=output_video
+                )
+                
+                if progress_callback:
+                    progress_callback("✅ 无字幕视频处理完成！")
+                
+                LOG.info(f"✅ 无字幕视频处理成功: {output_video}, 大小: {os.path.getsize(output_video)/1024/1024:.2f}MB")
+                return output_video
+            else:
+                if progress_callback:
+                    progress_callback(f"❌ 处理失败: {stderr}")
+                LOG.error(f"无字幕视频处理失败: {stderr}")
+                return None
+                
+        except Exception as e:
+            error_msg = f"处理无字幕视频失败: {str(e)}"
+            if progress_callback:
+                progress_callback(f"❌ {error_msg}")
+            LOG.error(error_msg)
+            return None
 
 # 全局实例
 video_burner = VideoSubtitleBurner() 

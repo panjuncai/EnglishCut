@@ -62,8 +62,8 @@ def load_video_list():
         # LOG.info(f"生成了 {len(options)} 个下拉选项")
         
         # 为调试输出前5个选项
-        for i, option in enumerate(options[:5]):
-            LOG.info(f"选项 {i+1}: {option}")
+        # for i, option in enumerate(options[:5]):
+        #     LOG.info(f"选项 {i+1}: {option}")
         
         # 返回选项列表
         return options
@@ -189,21 +189,11 @@ def create_main_interface():
         status_md = gr.Markdown("## ℹ️ 系统状态\n系统已就绪，请开始工作流程")
         
         # 添加调试显示
-        debug_md = gr.Markdown(f"## 🔍 调试信息\n- 视频列表: {len(video_list)}个\n- 字幕视频: {len(subtitle_videos)}个")
+        # debug_md = gr.Markdown(f"## 🔍 调试信息\n- 视频列表: {len(video_list)}个\n- 字幕视频: {len(subtitle_videos)}个")
         
         with gr.Tabs() as tabs:
             # 步骤1: 上传文件并9:16裁剪
             with gr.TabItem("📤 步骤1: 上传视频") as tab1:
-                gr.Markdown("""
-                ## 📤 上传视频文件
-                
-                此步骤将完成:
-                1. 上传原始视频文件
-                2. 自动进行9:16裁剪
-                3. 保存到input文件夹
-                4. 信息存入数据库
-                """)
-                
                 with gr.Row():
                     with gr.Column(scale=2):
                         # 文件上传
@@ -228,15 +218,6 @@ def create_main_interface():
             
             # 步骤2: 字幕生成或上传
             with gr.TabItem("🔤 步骤2: 字幕处理") as tab2:
-                gr.Markdown("""
-                ## 🔤 字幕生成或上传
-                
-                此步骤将完成:
-                1. 为视频生成字幕，或上传已有字幕
-                2. 可选进行翻译
-                3. 保存到output文件夹
-                4. 信息存入数据库
-                """)
                 
                 with gr.Tabs() as subtitle_tabs:
                     # 字幕生成选项卡
@@ -250,14 +231,7 @@ def create_main_interface():
                                         choices=video_list,  # 直接使用初始化好的列表
                                         value=None,
                                         interactive=True
-                                    )
-                                    
-                                    # 添加刷新按钮
-                                    refresh_videos_btn = gr.Button(
-                                        "🔄 刷新列表",
-                                        variant="secondary",
-                                        size="sm"
-                                    )
+                                    )   
                                 
                                 with gr.Row():
                                     # 字幕选项
@@ -265,10 +239,15 @@ def create_main_interface():
                                         label="🌐 启用中文翻译",
                                         value=True,
                                     )
-                                    
                                     generate_button = gr.Button(
                                         "🎬 生成字幕",
                                         variant="primary",
+                                        size="lg"
+                                    )
+                                    # 添加刷新按钮
+                                    refresh_videos_btn = gr.Button(
+                                        "🔄 刷新列表",
+                                        variant="secondary",
                                         size="lg"
                                     )
                         
@@ -339,14 +318,6 @@ def create_main_interface():
             
             # 步骤3: 关键词AI筛查提取
             with gr.TabItem("🔑 步骤3: 关键词提取") as tab3:
-                gr.Markdown("""
-                ## 🔑 关键词AI筛查提取
-                
-                此步骤将完成:
-                1. 从字幕中提取重点单词
-                2. 自动更新COCA频率
-                3. 信息存入数据库
-                """)
                 
                 with gr.Row():
                     with gr.Column(scale=2):
@@ -359,26 +330,26 @@ def create_main_interface():
                                 interactive=True
                             )
                             
-                            # 添加刷新按钮
-                            refresh_subtitle_videos_btn = gr.Button(
-                                "🔄 刷新视频列表",
-                                variant="secondary",
-                                size="sm"
-                            )
+                            
                         
                         with gr.Row():
                             # 提取选项
                             coca_checkbox = gr.Checkbox(
                                 label="📚 自动更新COCA频率",
                                 value=True,
-                                info="自动查询并更新单词的COCA频率"
                             )
+                            extract_button = gr.Button(
+                                "🔍 提取关键词",
+                                variant="primary"
+                            )
+                            # 添加刷新按钮
+                            refresh_subtitle_videos_btn = gr.Button(
+                                "🔄 刷新视频列表",
+                                variant="secondary",
+                                size="lg"
+                            )
+                            
                         
-                        extract_button = gr.Button(
-                            "🔍 提取关键词",
-                            variant="primary"
-                        )
-                    
                     with gr.Column(scale=1):
                         keywords_result = gr.Markdown("### 提取结果\n等待提取...")
                 
@@ -393,20 +364,11 @@ def create_main_interface():
             
             # 步骤4: 视频烧制
             with gr.TabItem("🔥 步骤4: 视频烧制") as tab4:
-                gr.Markdown("""
-                ## 🔥 视频烧制
-                
-                此步骤将完成:
-                1. 选择带字幕和关键词的视频
-                2. 预览要烧制的视频内容
-                3. 一键生成烧制视频，自动存入数据库
-                """)
                 
                 # 顶部控制区域
                 with gr.Row():
                     # 左侧控制面板
-                    with gr.Column(scale=2):
-                        gr.Markdown("### 视频烧制")
+                    with gr.Column():
                         # 选择带字幕的视频
                         with gr.Row():
                             burn_video_dropdown = gr.Dropdown(
@@ -416,18 +378,19 @@ def create_main_interface():
                                 interactive=True,
                                 container=True
                             )
-                            
-                            # 添加刷新按钮
-                            refresh_burn_videos_btn = gr.Button(
-                                "刷新视频列表",
-                                variant="secondary",
-                                size="sm"
-                            )
-                
                 # 功能按钮行
                 with gr.Row():
                     with gr.Column():
+                        refresh_burn_videos_btn = gr.Button(
+                                "刷新视频列表",
+                                variant="secondary",
+                                size="lg",
+                                elem_classes="burn-button"
+                            )
+                    with gr.Column():
                         preview_btn = gr.Button("预览烧制信息", variant="secondary", size="lg", elem_classes="burn-button")
+                    with gr.Column():
+                        burn_no_subtitle_btn = gr.Button("烧制无字幕", variant="primary", size="lg", elem_classes="burn-button")
                     with gr.Column():
                         burn_keywords_btn = gr.Button("烧制关键词", variant="primary", size="lg", elem_classes="burn-button")
                     with gr.Column():
@@ -1287,6 +1250,100 @@ def create_main_interface():
 请检查日志获取详细信息，或联系技术支持。
 """
         
+        def burn_no_subtitle_video(video_selection, output_dir):
+            """烧制无字幕视频，只有顶部标题"""
+            if not video_selection:
+                yield "❌ 请先选择视频", "### ❌ 错误\n请先选择视频"
+                return
+            
+            try:
+                # 从选择中提取系列ID
+                if '(' in video_selection:
+                    video_id_part = video_selection.split('(')[0].strip()
+                    parts = video_id_part.split('-')
+                else:
+                    parts = video_selection.split('-')
+                
+                if len(parts) >= 1:
+                    video_id_str = parts[0].strip()
+                    try:
+                        video_id = int(video_id_str)
+                        LOG.info(f"提取的视频ID: {video_id}")
+                    except ValueError:
+                        LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
+                        yield f"❌ '{video_id_str}' 不是有效的视频ID", f"### ❌ 错误\n无效的视频ID"
+                        return
+                else:
+                    yield "❌ 视频选择格式错误", "### ❌ 错误\n视频选择格式错误"
+                    return
+                
+                # 导入视频烧制模块
+                from video_subtitle_burner import video_burner
+                
+                progress_log = []
+                
+                def progress_callback(message):
+                    # 添加消息到日志列表
+                    progress_log.append(message)
+                    # 返回格式化的日志，最近20条消息
+                    return '\n'.join(progress_log[-20:])
+                
+                # 开始烧制
+                yield "🔄 准备烧制无字幕视频...", "### ⏳ 处理中\n正在准备烧制无字幕视频..."
+                
+                # 获取系列信息以显示更详细的进度
+                series_list = db_manager.get_series(video_id)
+                if series_list:
+                    series = series_list[0]
+                    input_video = series.get('new_file_path', '')
+                    if input_video:
+                        input_basename = os.path.basename(input_video)
+                        yield f"🔄 正在烧制：基于 {input_basename}", "### ⏳ 处理中\n正在处理视频文件..."
+                
+                # 执行无字幕视频处理
+                output_video = video_burner.process_no_subtitle_video(
+                    video_id,
+                    output_dir,
+                    title_text="第一遍：无字幕",
+                    progress_callback=progress_callback
+                )
+                
+                if output_video:
+                    final_message = "✅ 无字幕视频烧制完成！"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), f"""### ✅ 无字幕视频烧制成功
+
+**输出文件**：{os.path.basename(output_video)}  
+**保存路径**：{output_video}  
+**状态**：已更新到数据库  
+
+**说明**：基于输入视频生成只有顶部标题的无字幕视频，存放在input文件夹下。
+    
+**点击刷新按钮**可以重新选择视频进行烧制。
+"""
+                else:
+                    final_message = "❌ 无字幕视频烧制失败"
+                    progress_log.append(final_message)
+                    yield '\n'.join(progress_log), """### ❌ 无字幕视频烧制失败
+
+处理过程中发生错误，请检查日志获取详细信息。
+
+可能的原因：
+- 视频文件不存在或已损坏
+- 系统资源不足
+
+请尝试刷新视频列表，选择其他视频或重试。
+"""
+            except Exception as e:
+                error_msg = f"无字幕视频烧制过程失败: {str(e)}"
+                LOG.error(error_msg)
+                yield error_msg, f"""### ❌ 无字幕视频烧制失败
+
+处理过程中发生错误: {str(e)}
+
+请检查日志获取详细信息，或联系技术支持。
+"""
+        
         # 实时刷新视频列表的函数
         def refresh_video_list():
             """在用户点击下拉框时刷新视频列表"""
@@ -1469,6 +1526,12 @@ def create_main_interface():
         )
         
         # 烧制视频
+        burn_no_subtitle_btn.click(
+            burn_no_subtitle_video,
+            inputs=[burn_video_dropdown, output_dir_input],
+            outputs=[burn_progress, burn_result]
+        )
+        
         burn_keywords_btn.click(
             burn_keywords_only_video,
             inputs=[burn_video_dropdown, output_dir_input],
