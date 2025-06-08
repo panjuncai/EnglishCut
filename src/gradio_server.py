@@ -450,12 +450,58 @@ def create_main_interface():
                 video_preview = gr.Video(
                     label="预览视频",
                     visible=False,
-                    height=480,
-                    width=270,
+                    height=270,
+                    width=480,
                     autoplay=False,
                     show_label=True,
                     elem_id="video_preview_element"
                 )
+                
+                # 添加多视频预览布局
+                with gr.Row(visible=False, elem_id="multi_video_preview_row") as video_preview_row:
+                    with gr.Column(scale=1):
+                        original_video_preview = gr.Video(
+                            label="9:16预处理视频",
+                            visible=False,
+                            height=480,
+                            width=270,
+                            autoplay=False,
+                            show_label=True,
+                            elem_id="original_video_preview"
+                        )
+                    
+                    with gr.Column(scale=1):
+                        first_video_preview = gr.Video(
+                            label="第一遍：无字幕",
+                            visible=False,
+                            height=480,
+                            width=270,
+                            autoplay=False,
+                            show_label=True,
+                            elem_id="first_video_preview"
+                        )
+                    
+                    with gr.Column(scale=1):
+                        second_video_preview = gr.Video(
+                            label="第二遍：重点词汇",
+                            visible=False,
+                            height=480,
+                            width=270,
+                            autoplay=False,
+                            show_label=True,
+                            elem_id="second_video_preview"
+                        )
+                    
+                    with gr.Column(scale=1):
+                        third_video_preview = gr.Video(
+                            label="第三遍：完全消化",
+                            visible=False,
+                            height=480,
+                            width=270,
+                            autoplay=False,
+                            show_label=True,
+                            elem_id="third_video_preview"
+                        )
         
         # 辅助函数
         def update_file_info(file_path):
@@ -1271,7 +1317,7 @@ def create_main_interface():
             LOG.info(f"预览烧制 - 选择的视频: {video_selection}")
             
             if not video_selection:
-                return "### ❌ 错误\n请先选择视频", gr.update(visible=False)
+                return "### ❌ 错误\n请先选择视频", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
             
             try:
                 # 从选择中提取系列ID
@@ -1289,15 +1335,15 @@ def create_main_interface():
                         LOG.info(f"提取的视频ID: {video_id}")
                     except ValueError:
                         LOG.error(f"无法将 '{video_id_str}' 转换为有效的ID")
-                        return f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID", gr.update(visible=False)
+                        return f"### ❌ 错误\n'{video_id_str}' 不是有效的视频ID", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                 else:
-                    return "### ❌ 错误\n视频选择格式错误", gr.update(visible=False)
+                    return "### ❌ 错误\n视频选择格式错误", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                 
                 # 获取系列信息
                 series_list = db_manager.get_series(video_id)
                 if not series_list:
                     LOG.error(f"未找到ID为 {video_id} 的视频")
-                    return "### ❌ 错误\n未找到选择的视频", gr.update(visible=False)
+                    return "### ❌ 错误\n未找到选择的视频", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                 
                 series = series_list[0]
                 
@@ -1306,10 +1352,10 @@ def create_main_interface():
                 keywords = db_manager.get_keywords(series_id=video_id)
                 
                 if not subtitles:
-                    return "### ❌ 错误\n所选视频没有字幕", gr.update(visible=False)
+                    return "### ❌ 错误\n所选视频没有字幕", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                 
                 if not keywords:
-                    return "### ❌ 错误\n所选视频没有关键词", gr.update(visible=False)
+                    return "### ❌ 错误\n所选视频没有关键词", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                 
                 # 导入视频烧制模块
                 from video_subtitle_burner import video_burner
@@ -1317,10 +1363,63 @@ def create_main_interface():
                 # 获取预览信息
                 preview = video_burner.get_burn_preview(video_id)
                 
-                # 检查是否有预处理视频可预览
-                video_preview_path = None
+                # 收集所有可用的视频路径
+                available_videos = {}
+                
+                # 检查原始16:9视频
+                original_video_path = None
+                if 'file_path' in series and series['file_path'] and os.path.exists(series['file_path']):
+                    original_video_path = series['file_path']
+                    available_videos['original'] = {
+                        'path': series['file_path'],
+                        'name': os.path.basename(series['file_path']),
+                        'description': '原始16:9视频'
+                    }
+                
+                # 检查9:16预处理视频
+                processed_video_path = None
                 if 'new_file_path' in series and series['new_file_path'] and os.path.exists(series['new_file_path']):
-                    video_preview_path = series['new_file_path']
+                    processed_video_path = series['new_file_path']
+                    available_videos['processed'] = {
+                        'path': series['new_file_path'],
+                        'name': os.path.basename(series['new_file_path']),
+                        'description': '9:16预处理视频'
+                    }
+                
+                # 检查第一遍视频
+                first_video_path = None
+                if 'first_file_path' in series and series['first_file_path'] and os.path.exists(series['first_file_path']):
+                    first_video_path = series['first_file_path']
+                    available_videos['first'] = {
+                        'path': series['first_file_path'],
+                        'name': os.path.basename(series['first_file_path']),
+                        'description': '第一遍：无字幕'
+                    }
+                
+                # 检查第二遍视频
+                second_video_path = None
+                if 'second_file_path' in series and series['second_file_path'] and os.path.exists(series['second_file_path']):
+                    second_video_path = series['second_file_path']
+                    available_videos['second'] = {
+                        'path': series['second_file_path'],
+                        'name': os.path.basename(series['second_file_path']),
+                        'description': '第二遍：重点词汇'
+                    }
+                
+                # 检查第三遍视频
+                third_video_path = None
+                if 'third_file_path' in series and series['third_file_path'] and os.path.exists(series['third_file_path']):
+                    third_video_path = series['third_file_path']
+                    available_videos['third'] = {
+                        'path': series['third_file_path'],
+                        'name': os.path.basename(series['third_file_path']),
+                        'description': '第三遍：完全消化'
+                    }
+                
+                # 记录找到的视频
+                LOG.info(f"找到 {len(available_videos)} 个相关视频:")
+                for key, video in available_videos.items():
+                    LOG.info(f"- {key}: {video['name']} ({video['description']})")
                 
                 # 构建预览信息
                 preview_text = f"""#### 系列信息
@@ -1351,22 +1450,46 @@ def create_main_interface():
                 else:
                     preview_text += "\n#### 暂无符合条件的重点单词"
                 
-                # 返回预览信息和视频预览更新
-                if video_preview_path:
-                    # 返回添加了视频预览路径的更新
-                    return preview_text, gr.update(
-                        visible=True, 
-                        value=video_preview_path
-                    )
-                else:
-                    return preview_text, gr.update(visible=False)
+                # 添加视频预览信息
+                if available_videos:
+                    preview_text += "\n#### 相关视频\n"
+                    for key, video in available_videos.items():
+                        preview_text += f"- **{video['description']}**: {video['name']}\n"
+                
+                # 为了兼容旧版，选择一个视频预览
+                # 优先级：原始16:9视频 > 第一遍 > 第二遍 > 第三遍 > 9:16预处理视频
+                video_preview_path = None
+                if original_video_path:
+                    video_preview_path = original_video_path
+                elif first_video_path:
+                    video_preview_path = first_video_path
+                elif second_video_path:
+                    video_preview_path = second_video_path
+                elif third_video_path:
+                    video_preview_path = third_video_path
+                elif processed_video_path:
+                    video_preview_path = processed_video_path
+                
+                # 准备返回预览信息和视频预览更新
+                # 组装返回结果
+                result = [
+                    preview_text,  # 预览文本
+                    gr.update(visible=True if video_preview_path else False, value=video_preview_path),  # 兼容旧版的单视频预览
+                    gr.update(visible=True if len(available_videos) > 0 else False),  # 多视频预览行
+                    gr.update(visible=True if processed_video_path else False, value=processed_video_path),  # 9:16预处理视频
+                    gr.update(visible=True if first_video_path else False, value=first_video_path),  # 第一遍视频
+                    gr.update(visible=True if second_video_path else False, value=second_video_path),  # 第二遍视频
+                    gr.update(visible=True if third_video_path else False, value=third_video_path)  # 第三遍视频
+                ]
+                
+                return tuple(result)
                     
             except Exception as e:
                 LOG.error(f"预览烧制信息失败: {e}")
                 import traceback
                 LOG.error(traceback.format_exc())
-                return f"### ❌ 错误\n预览失败: {str(e)}", gr.update(visible=False)
-
+                return f"### ❌ 错误\n预览失败: {str(e)}", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        
         def burn_video_with_progress(video_selection, output_dir):
             """烧制视频（带进度显示）"""
             if not video_selection:
@@ -1888,7 +2011,7 @@ def create_main_interface():
         preview_btn.click(
             preview_burn_video,
             inputs=[burn_video_dropdown],
-            outputs=[burn_preview, video_preview]
+            outputs=[burn_preview, video_preview, video_preview_row, original_video_preview, first_video_preview, second_video_preview, third_video_preview]
         )
         
         # 烧制视频
