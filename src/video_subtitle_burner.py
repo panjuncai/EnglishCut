@@ -203,7 +203,7 @@ class VideoSubtitleBurner:
             return text.replace("\\", "\\\\").replace(":", "\\\\:").replace("'", "`").replace(",", "\\\\,").replace("=", "\\\\=")
 
         top_text_escaped = escape_text(top_text)
-
+        
         # 字体路径
         douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
         phonetic_font = '/Users/panjc/Library/Fonts/NotoSans-Regular.ttf'
@@ -249,7 +249,7 @@ class VideoSubtitleBurner:
             # y坐标 = 顶部区域中心
             f"drawtext=text='{top_text_escaped}':fontcolor=white:fontsize={int(width*0.1)}:x=(w-text_w)/2:y=({top_padding}-text_h)/2:fontfile='{douyin_font}':shadowcolor=black@0.6:shadowx=1:shadowy=1",
         ]
-
+        
         # 5. 底部字幕文字
         if bottom_text:
             lines = bottom_text.split('\n')
@@ -271,27 +271,59 @@ class VideoSubtitleBurner:
                 if any('\u4e00' <= char <= '\u9fff' for char in line):
                     font_size = int(width * 0.05) # 中文字体稍小
                 
-                filter_chain.append(
+                    filter_chain.append(
                     f"drawtext=text='{escaped_line}':fontcolor=#111111:fontsize={font_size}:x=(w-text_w)/2:y={y_pos}:fontfile='{douyin_font}'"
-                )
-        
+                    )
+                    
         # 6. 关键词和音标
         if keyword_text and all(k in keyword_text for k in ['word', 'phonetic', 'meaning']):
             word = escape_text(keyword_text['word'])
             phonetic = escape_text(keyword_text['phonetic'])
             meaning = escape_text(keyword_text['meaning'])
             
-            # 关键词位置: 视频区域正中
-            y_pos_word = top_padding + (width - int(width*0.15)*3)/2
-            filter_chain.append(f"drawtext=text='{word}':fontcolor=yellow:fontsize={int(width*0.15)}:x=(w-text_w)/2:y={y_pos_word}:fontfile='{douyin_font}':shadowcolor=black@0.7:shadowx=2:shadowy=2")
+            # 动态调整关键词字号以适应背景框
+            max_word_h = int(width * 0.15)
+            # 当字符数超过10个时，开始缩小字号
+            char_limit = 10
+            if len(word) > char_limit:
+                scale_factor = char_limit / len(word)
+                word_h = int(max_word_h * scale_factor)
+                # 设置一个最小字号，防止过小
+                min_word_h = int(width * 0.08)
+                word_h = max(word_h, min_word_h)
+            else:
+                word_h = max_word_h
+
+            phonetic_h = int(width * 0.08)
+            meaning_h = int(width * 0.08)
+            v_padding = int(width * 0.04) # 上下边距
+            bottom_margin = int(width * 0.05) # 距离视频区域底部的边距
+
+            # 计算内容和背景框高度
+            content_h = word_h + phonetic_h + meaning_h
+            box_h = content_h + (v_padding * 2)
+
+            # 定位：靠在视频区域底部
+            box_y = top_padding + width - box_h - bottom_margin
+            y_pos_word = box_y + v_padding
+
+            # 背景框参数
+            box_w = int(width * 0.9)
+            box_x = int((width - box_w) / 2)
+
+            # 添加半透明背景框
+            filter_chain.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=black@0.5:t=fill")
+
+            # 关键词
+            filter_chain.append(f"drawtext=text='{word}':fontcolor=yellow:fontsize={word_h}:x=(w-text_w)/2:y={y_pos_word}:fontfile='{douyin_font}':shadowcolor=black@0.7:shadowx=2:shadowy=2")
             
-            # 音标位置: 关键词下方
-            y_pos_phonetic = y_pos_word + int(width*0.15)
-            filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=white:fontsize={int(width*0.08)}:x=(w-text_w)/2:y={y_pos_phonetic}:fontfile='{phonetic_font}'")
+            # 音标
+            y_pos_phonetic = y_pos_word + word_h
+            filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=white:fontsize={phonetic_h}:x=(w-text_w)/2:y={y_pos_phonetic}:fontfile='{phonetic_font}'")
             
-            # 释义位置: 音标下方
-            y_pos_meaning = y_pos_phonetic + int(width*0.08)
-            filter_chain.append(f"drawtext=text='{meaning}':fontcolor=white:fontsize={int(width*0.08)}:x=(w-text_w)/2:y={y_pos_meaning}:fontfile='{douyin_font}'")
+            # 释义
+            y_pos_meaning = y_pos_phonetic + phonetic_h
+            filter_chain.append(f"drawtext=text='{meaning}':fontcolor=white:fontsize={meaning_h}:x=(w-text_w)/2:y={y_pos_meaning}:fontfile='{douyin_font}'")
             
         filter_chain.append("setdar=9/16")
         return ",".join(filter_chain)
@@ -306,7 +338,7 @@ class VideoSubtitleBurner:
             return text.replace("\\", "\\\\").replace(":", "\\\\:").replace("'", "`").replace(",", "\\\\,").replace("=", "\\\\=")
 
         top_text_escaped = escape_text(top_text)
-
+        
         douyin_font = '/Users/panjc/Library/Fonts/DouyinSansBold.ttf'
         phonetic_font = '/Users/panjc/Library/Fonts/NotoSans-Regular.ttf'
 
@@ -334,14 +366,49 @@ class VideoSubtitleBurner:
             phonetic = escape_text(keyword_text['phonetic'])
             meaning = escape_text(keyword_text['meaning'])
             
-            y_pos_word = top_padding + (width - int(width*0.15)*3)/2
-            filter_chain.append(f"drawtext=text='{word}':fontcolor=yellow:fontsize={int(width*0.15)}:x=(w-text_w)/2:y={y_pos_word}:fontfile='{douyin_font}':shadowcolor=black@0.7:shadowx=2:shadowy=2")
+            # 动态调整关键词字号以适应背景框
+            max_word_h = int(width * 0.15)
+            # 当字符数超过10个时，开始缩小字号
+            char_limit = 10
+            if len(word) > char_limit:
+                scale_factor = char_limit / len(word)
+                word_h = int(max_word_h * scale_factor)
+                # 设置一个最小字号，防止过小
+                min_word_h = int(width * 0.08)
+                word_h = max(word_h, min_word_h)
+            else:
+                word_h = max_word_h
+
+            phonetic_h = int(width * 0.08)
+            meaning_h = int(width * 0.08)
+            v_padding = int(width * 0.04) # 上下边距
+            bottom_margin = int(width * 0.05) # 距离视频区域底部的边距
+
+            # 计算内容和背景框高度
+            content_h = word_h + phonetic_h + meaning_h
+            box_h = content_h + (v_padding * 2)
+
+            # 定位：靠在视频区域底部
+            box_y = top_padding + width - box_h - bottom_margin
+            y_pos_word = box_y + v_padding
+
+            # 背景框参数
+            box_w = int(width * 0.9)
+            box_x = int((width - box_w) / 2)
+
+            # 添加半透明背景框
+            filter_chain.append(f"drawbox=x={box_x}:y={box_y}:w={box_w}:h={box_h}:color=black@0.5:t=fill")
+
+            # 关键词
+            filter_chain.append(f"drawtext=text='{word}':fontcolor=yellow:fontsize={word_h}:x=(w-text_w)/2:y={y_pos_word}:fontfile='{douyin_font}':shadowcolor=black@0.7:shadowx=2:shadowy=2")
             
-            y_pos_phonetic = y_pos_word + int(width*0.15)
-            filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=white:fontsize={int(width*0.08)}:x=(w-text_w)/2:y={y_pos_phonetic}:fontfile='{phonetic_font}'")
+            # 音标
+            y_pos_phonetic = y_pos_word + word_h
+            filter_chain.append(f"drawtext=text='{phonetic}':fontcolor=white:fontsize={phonetic_h}:x=(w-text_w)/2:y={y_pos_phonetic}:fontfile='{phonetic_font}'")
             
-            y_pos_meaning = y_pos_phonetic + int(width*0.08)
-            filter_chain.append(f"drawtext=text='{meaning}':fontcolor=white:fontsize={int(width*0.08)}:x=(w-text_w)/2:y={y_pos_meaning}:fontfile='{douyin_font}'")
+            # 释义
+            y_pos_meaning = y_pos_phonetic + phonetic_h
+            filter_chain.append(f"drawtext=text='{meaning}':fontcolor=white:fontsize={meaning_h}:x=(w-text_w)/2:y={y_pos_meaning}:fontfile='{douyin_font}'")
             
         filter_chain.append("setdar=9/16")
         return ",".join(filter_chain)
@@ -556,10 +623,10 @@ class VideoSubtitleBurner:
                     if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
                         abs_segment_path = os.path.abspath(segment_path)
                         f.write(f"file '{abs_segment_path}'\n")
-
+            
             if progress_callback:
                 progress_callback("🔄 开始合并所有视频片段...")
-
+                
             concat_cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
@@ -639,12 +706,12 @@ class VideoSubtitleBurner:
             
             input_video = target_series.get('new_file_path')
             if not input_video or not os.path.exists(input_video):
-                if progress_callback:
-                    progress_callback(f"❌ 找不到预处理的1:1视频: {input_video}，请先执行预处理")
-                return None
-            
-            if progress_callback:
-                progress_callback(f"📹 使用1:1裁剪视频: {os.path.basename(input_video)}")
+                    if progress_callback:
+                        progress_callback(f"❌ 找不到预处理的1:1视频: {input_video}，请先执行预处理")
+                        return None
+            else:
+                    if progress_callback:
+                        progress_callback(f"📹 使用1:1裁剪视频: {os.path.basename(input_video)}")
             
             burn_data = self.get_key_words_for_burning(series_id)
             if not burn_data:
@@ -743,10 +810,10 @@ class VideoSubtitleBurner:
                     video_width, video_height = self._get_video_dimensions(temp_segment_path)
                     
                     keyword_info = {
-                        'word': item['keyword'],
-                        'phonetic': item['phonetic'],
-                        'meaning': item['explanation']
-                    }
+                            'word': item['keyword'],
+                            'phonetic': item['phonetic'],
+                            'meaning': item['explanation']
+                        }
                     
                     video_filter = self._build_keywords_only_filter(title_text, keyword_info, width=video_width, height=video_height)
                     
@@ -823,12 +890,12 @@ class VideoSubtitleBurner:
             
             series_list = db_manager.get_series()
             target_series = next((s for s in series_list if s['id'] == series_id), None)
-            
+                
             if not target_series:
                 if progress_callback:
                     progress_callback("❌ 找不到指定的系列")
-                return None
-            
+                    return None
+                
             input_video = target_series.get('new_file_path')
             if not input_video or not os.path.exists(input_video):
                 if progress_callback:
@@ -867,18 +934,18 @@ class VideoSubtitleBurner:
             )
             
             if success:
-                db_manager.update_series_video_info(
-                    series_id,
-                    second_name=os.path.basename(output_video),
-                    second_file_path=output_video
-                )
-                
-                if progress_callback:
+                    db_manager.update_series_video_info(
+                        series_id,
+                        second_name=os.path.basename(output_video),
+                        second_file_path=output_video
+                    )
+                    
+            if progress_callback:
                     progress_callback(f"🎉 重点单词视频完成！输出文件: {output_video}")
                 
-                return output_video
+                    return output_video
             else:
-                return None
+                    return None
                 
         except Exception as e:
             error_msg = f"处理重点单词视频失败: {str(e)}"
@@ -955,11 +1022,11 @@ class VideoSubtitleBurner:
                 return {"preview_image": preview_image_path}
             else:
                 return {"error": "生成预览图失败"}
-                
+            
         except Exception as e:
             LOG.error(f"生成预览失败: {e}")
             return {"error": f"生成预览失败: {str(e)}"}
-
+    
     def cleanup(self):
         """清理临时目录"""
         try:
@@ -982,7 +1049,7 @@ class VideoSubtitleBurner:
         try:
             if progress_callback:
                 progress_callback("🔍 开始处理无字幕视频...")
-
+            
             series_list = db_manager.get_series()
             target_series = next((s for s in series_list if s['id'] == series_id), None)
             if not target_series:
@@ -994,15 +1061,15 @@ class VideoSubtitleBurner:
             if not input_video or not os.path.exists(input_video):
                 if progress_callback:
                     progress_callback(f"❌ 找不到预处理的1:1视频: {input_video}，请先执行预处理")
-                return None
-
+                    return None
+                
             width, height = self._get_video_dimensions(input_video)
-
+            
             os.makedirs(output_dir, exist_ok=True)
             input_basename = os.path.basename(input_video)
             base_name = os.path.splitext(input_basename)[0].replace("_0", "")
             output_video = os.path.join(output_dir, f"{base_name}_1.mp4")
-
+            
             video_filter = self._build_no_subtitle_filter(title_text, width=width, height=height)
 
             cmd = [
@@ -1029,7 +1096,7 @@ class VideoSubtitleBurner:
                 return output_video
             else:
                 return None
-
+                
         except Exception as e:
             LOG.error(f"处理无字幕视频失败: {e}")
             if progress_callback:
@@ -1043,7 +1110,7 @@ class VideoSubtitleBurner:
                     LOG.info(f"🧹 临时目录已清理: {temp_dir}")
             except Exception as e:
                 LOG.warning(f"清理临时目录失败: {e}")
-
+    
     def merge_video_series(self, 
                            first_video_path: str, 
                            second_video_path: str, 
@@ -1072,7 +1139,7 @@ class VideoSubtitleBurner:
                 if progress_callback:
                     progress_callback("⚠️ 少于两个视频，无需合并")
                 return False
-                
+            
             segments_list_path = os.path.join(temp_dir, "merge_list.txt")
             with open(segments_list_path, 'w') as f:
                 for video_path in videos_to_merge:
@@ -1092,8 +1159,8 @@ class VideoSubtitleBurner:
             if progress_callback:
                 progress_callback(f"✅ 视频合并成功: {output_video}")
                 
-            return True
-
+                return True
+            
         except Exception as e:
             LOG.error(f"合并视频失败: {e}")
             if progress_callback:
