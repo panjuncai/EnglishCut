@@ -219,7 +219,7 @@ class MediaProcessor:
                 LOG.error(f"❌ 复制原始视频失败: {str(e)}")
                 # 复制失败不影响后续处理
             
-            LOG.info(f"🔄 开始对视频进行9:16比例预处理: {video_path}")
+            LOG.info(f"🔄 开始对视频进行1:1比例预处理: {video_path}")
             
             # 首先获取视频时长
             duration = 0
@@ -266,8 +266,8 @@ class MediaProcessor:
                 LOG.error(f"❌ 获取视频尺寸出错: {str(e)}")
             
             # 计算裁剪参数
-            crop_height = video_height * 4/5  # 忽略底部1/5区域
-            crop_width = crop_height * 9/16  # 按9:16比例计算宽度
+            crop_height = video_height
+            crop_width = crop_height * 1/1  # 按1:1比例计算宽度
             
             # 根据方向和偏移百分比计算X坐标
             if direction == "center":
