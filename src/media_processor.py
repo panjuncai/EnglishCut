@@ -38,7 +38,7 @@ class MediaProcessor:
         LOG.info("🎵 多媒体处理器初始化完成")
     
     def process_file(self, file_path, output_format="SRT", enable_translation=False, 
-                 only_preprocess=False, skip_preprocess=False):
+                 only_preprocess=False, skip_preprocess=False, crop_direction="center", crop_offset_percent=0):
         """
         处理文件
         
@@ -48,6 +48,8 @@ class MediaProcessor:
         - enable_translation: 是否启用翻译
         - only_preprocess: 是否只执行预处理（9:16裁剪）
         - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
+        - crop_direction: 裁剪方向，"left"向左偏移，"right"向右偏移，"center"居中(默认)
+        - crop_offset_percent: 偏移百分比，0-100之间的值
         
         返回:
         - dict: 处理结果
@@ -65,7 +67,12 @@ class MediaProcessor:
             video_duration = 0
             if file_info['type'] == 'video' and not skip_preprocess:
                 # 进行9:16裁剪
-                preprocess_result = self._preprocess_video_to_9_16(file_path, file_info['name'])
+                preprocess_result = self._preprocess_video_to_9_16(
+                    file_path, 
+                    file_info['name'],
+                    direction=crop_direction,
+                    offset_percent=crop_offset_percent
+                )
                 if preprocess_result:
                     processed_video_path = preprocess_result['path']
                     video_duration = preprocess_result['duration']
@@ -158,13 +165,15 @@ class MediaProcessor:
             self._cleanup_temp_files()
             return self._create_error_result(f"处理失败: {str(e)}")
     
-    def _preprocess_video_to_9_16(self, video_path, video_name):
+    def _preprocess_video_to_9_16(self, video_path, video_name, direction="center", offset_percent=0):
         """
         对视频进行9:16比例预处理
         
         参数:
         - video_path: 原始视频路径
         - video_name: 视频名称
+        - direction: 裁剪方向，"left"向左偏移，"right"向右偏移，"center"居中(默认)
+        - offset_percent: 偏移百分比，0-100之间的值
         
         返回:
         - dict: 包含处理后视频路径和视频时长的字典，失败返回None
@@ -174,6 +183,15 @@ class MediaProcessor:
             if not check_ffmpeg_availability():
                 LOG.error("❌ 未找到ffmpeg，无法预处理视频")
                 return None
+            
+            # 验证参数
+            if direction not in ["left", "right", "center"]:
+                LOG.warning(f"⚠️ 无效的裁剪方向: {direction}，使用默认值'center'")
+                direction = "center"
+            
+            # 确保偏移百分比在0-100之间
+            offset_percent = max(0, min(100, offset_percent))
+            LOG.info(f"🔄 视频裁剪配置: 方向={direction}, 偏移百分比={offset_percent}%")
             
             # 生成输出文件路径
             base_name = os.path.splitext(video_name)[0]
@@ -223,12 +241,62 @@ class MediaProcessor:
             except Exception as e:
                 LOG.error(f"❌ 获取视频时长出错: {str(e)}")
             
-            # 使用ffmpeg对视频进行9:16处理，应用pre_process.py中的处理逻辑
-            # 从原视频中央挖出9:16比例的部分，忽略底部1/5的广告字幕
+            # 获取视频尺寸信息
+            video_width = 0
+            video_height = 0
+            try:
+                cmd = [
+                    'ffprobe',
+                    '-v', 'error',
+                    '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height',
+                    '-of', 'csv=p=0',
+                    video_path
+                ]
+                result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result.returncode == 0:
+                    dimensions = result.stdout.strip().split(',')
+                    if len(dimensions) >= 2:
+                        video_width = int(dimensions[0])
+                        video_height = int(dimensions[1])
+                        LOG.info(f"✅ 获取视频尺寸成功: {video_width}x{video_height}")
+                else:
+                    LOG.warning(f"⚠️ 获取视频尺寸失败: {result.stderr}")
+            except Exception as e:
+                LOG.error(f"❌ 获取视频尺寸出错: {str(e)}")
+            
+            # 计算裁剪参数
+            crop_height = video_height * 4/5  # 忽略底部1/5区域
+            crop_width = crop_height * 9/16  # 按9:16比例计算宽度
+            
+            # 根据方向和偏移百分比计算X坐标
+            if direction == "center":
+                # 居中裁剪
+                x_position = video_width/2 - crop_width/2
+            elif direction == "left":
+                # 向左偏移，x坐标减小
+                max_left_shift = video_width/2 - crop_width/2  # 最大可向左偏移量
+                shift_amount = max_left_shift * offset_percent / 100
+                x_position = video_width/2 - crop_width/2 - shift_amount
+                # 确保不超出左边界
+                x_position = max(0, x_position)
+            else:  # direction == "right"
+                # 向右偏移，x坐标增大
+                max_right_shift = video_width/2 - crop_width/2  # 最大可向右偏移量
+                shift_amount = max_right_shift * offset_percent / 100
+                x_position = video_width/2 - crop_width/2 + shift_amount
+                # 确保不超出右边界
+                x_position = min(video_width - crop_width, x_position)
+            
+            # 构建裁剪过滤器
+            crop_filter = f"crop={int(crop_width)}:{int(crop_height)}:{int(x_position)}:0,scale=720:1280"
+            LOG.info(f"🔄 裁剪参数: width={int(crop_width)}, height={int(crop_height)}, x={int(x_position)}, y=0")
+            
+            # 使用ffmpeg对视频进行9:16处理
             cmd = [
                 'ffmpeg', '-y',  # 覆盖输出文件
                 '-i', video_path,  # 输入视频
-                '-vf', "crop=ih*4/5*9/16:ih*4/5:iw/2-ih*4/5*9/16/2:0,scale=720:1280",  # 从中心裁剪9:16比例，避开底部1/5区域
+                '-vf', crop_filter,  # 根据方向和百分比裁剪
                 '-c:a', 'copy',  # 音频直接复制
                 '-preset', 'medium',  # 编码预设
                 '-crf', '23',  # 质量控制
@@ -637,7 +705,7 @@ class MediaProcessor:
 media_processor = MediaProcessor()
 
 def process_media_file(file_path, output_format="SRT", enable_translation=False, 
-                     only_preprocess=False, skip_preprocess=False):
+                     only_preprocess=False, skip_preprocess=False, crop_direction="center", crop_offset_percent=0):
     """
     外部调用接口：处理媒体文件
     
@@ -647,6 +715,8 @@ def process_media_file(file_path, output_format="SRT", enable_translation=False,
     - enable_translation: 是否启用翻译
     - only_preprocess: 是否只执行预处理（9:16裁剪）
     - skip_preprocess: 是否跳过预处理（已有预处理后的视频）
+    - crop_direction: 裁剪方向，"left"向左偏移，"right"向右偏移，"center"居中(默认)
+    - crop_offset_percent: 偏移百分比，0-100之间的值
     
     返回:
     - dict: 处理结果
@@ -657,7 +727,9 @@ def process_media_file(file_path, output_format="SRT", enable_translation=False,
         output_format=output_format, 
         enable_translation=enable_translation,
         only_preprocess=only_preprocess,
-        skip_preprocess=skip_preprocess
+        skip_preprocess=skip_preprocess,
+        crop_direction=crop_direction,
+        crop_offset_percent=crop_offset_percent
     )
 
 def get_media_formats_info():

@@ -204,6 +204,26 @@ def create_main_interface():
                             type="filepath"
                         )
                         
+                        # 添加裁剪方向选择
+                        with gr.Row():
+                            crop_direction = gr.Radio(
+                                choices=["center", "left", "right"],
+                                value="center",
+                                label="🔍 裁剪方向",
+                                info="选择9:16裁剪的方向：居中、向左或向右"
+                            )
+                        
+                        # 添加偏移百分比滑块
+                        with gr.Row():
+                            crop_offset = gr.Slider(
+                                minimum=0,
+                                maximum=100,
+                                value=0,
+                                step=5,
+                                label="📏 偏移百分比",
+                                info="调整裁剪位置的偏移量（0-100%）"
+                            )
+                        
                         upload_button = gr.Button(
                             "🚀 上传并处理",
                             variant="primary",
@@ -534,7 +554,7 @@ def create_main_interface():
 """
             return info_text
         
-        def process_upload(file_path):
+        def process_upload(file_path, crop_dir, crop_offset_pct):
             """处理文件上传和9:16裁剪"""
             if not file_path:
                 return "### ❌ 错误\n请先上传文件", "## ℹ️ 系统状态\n等待上传文件"
@@ -560,7 +580,9 @@ def create_main_interface():
                     file_path=actual_file_path,
                     output_format="SRT",
                     enable_translation=False,
-                    only_preprocess=True  # 只进行预处理，不生成字幕
+                    only_preprocess=True,  # 只进行预处理，不生成字幕
+                    crop_direction=crop_dir,  # 传递裁剪方向
+                    crop_offset_percent=crop_offset_pct  # 传递偏移百分比
                 )
                 
                 if result['success']:
@@ -569,13 +591,16 @@ def create_main_interface():
                     processed_name = os.path.basename(processed_path)
                     video_duration = result.get('duration', 0)
                     
+                    # 添加裁剪信息到返回消息
+                    crop_info = f"- **裁剪方向**: {crop_dir}\n- **偏移百分比**: {crop_offset_pct}%\n"
+                    
                     return (
                         f"""### ✅ 上传成功
 - **原始文件**: {file_name}
 - **处理后文件**: {processed_name}
 - **保存位置**: {processed_path}
 - **视频时长**: {video_duration:.2f} 秒
-- **状态**: 已保存到数据库
+{crop_info}- **状态**: 已保存到数据库
                         """,
                         f"""## ℹ️ 系统状态
 视频已上传并处理完成，请继续下一步"""
@@ -1993,7 +2018,7 @@ def create_main_interface():
         
         upload_button.click(
             process_upload,
-            inputs=[file_input],
+            inputs=[file_input, crop_direction, crop_offset],
             outputs=[upload_result, status_md]
         ).then(
             # 更新所有视频下拉框
