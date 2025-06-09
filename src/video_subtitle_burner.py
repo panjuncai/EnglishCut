@@ -28,13 +28,7 @@ class VideoSubtitleBurner:
         返回:
         - List[Dict]: 每条字幕的信息，包含该字幕的关键词（如果有）
         """
-        temp_dir = tempfile.mkdtemp(prefix="englishcut_burn_")
         try:
-            import subprocess
-            
-            if progress_callback:
-                progress_callback("🎬 开始视频烧制处理...")
-            
             # 获取系列的所有字幕
             subtitles = db_manager.get_subtitles(series_id)
             if not subtitles:
