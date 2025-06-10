@@ -128,8 +128,8 @@ def load_subtitle_videos():
 video_list = load_video_list()
 subtitle_videos = load_subtitle_videos()
 
-LOG.info(f"初始视频列表: {video_list}")
-LOG.info(f"初始字幕视频列表: {subtitle_videos}")
+# LOG.info(f"初始视频列表: {video_list}")
+# LOG.info(f"初始字幕视频列表: {subtitle_videos}")
 
 def create_main_interface():
     """创建主界面"""

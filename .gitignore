@@ -174,3 +174,5 @@ nohup.out
 *.mp4
 *.jpg
 *.srt
+*.ass
+*.atpj
