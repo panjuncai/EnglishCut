@@ -381,8 +381,8 @@ def create_main_interface():
                 
                 # 关键词预览表格
                 keywords_table = gr.Dataframe(
-                    headers=["ID", "字幕ID","单词", "音标", "释义", "COCA频率", "是否选中"],
-                    datatype=["number", "number","str", "str", "str", "number", "number"],
+                    headers=["ID", "音标", "释义", "COCA频率","单词", "字幕ID", "是否选中"],
+                    datatype=["number", "str", "str", "number","str",  "number","number"],
                     label="提取的关键词",
                     interactive=True,  # 设置为可交互
                     visible=False
@@ -984,11 +984,11 @@ def create_main_interface():
                         # 确保所有字段都存在，如果不存在则使用默认值
                         table_data.append([
                             kw.get('id', 0),                # 主键ID
-                            kw.get('subtitle_id', 0),       # 字幕ID
-                            kw.get('key_word', ''),         # 单词
                             kw.get('phonetic_symbol', ''),  # 音标
                             kw.get('explain_text', ''),     # 释义
                             kw.get('coca', 0),              # COCA频率
+                            kw.get('key_word', ''),         # 单词
+                            kw.get('subtitle_id', 0),       # 字幕ID
                             kw.get('is_selected', 0)        # 是否选中
                         ])
                     
@@ -1150,11 +1150,11 @@ def create_main_interface():
                     # 确保所有字段都存在，如果不存在则使用默认值
                     table_data.append([
                         kw.get('id', 0),                # 主键ID
-                        kw.get('subtitle_id', 0),       # 字幕ID
-                        kw.get('key_word', ''),         # 单词
                         kw.get('phonetic_symbol', ''),  # 音标
                         kw.get('explain_text', ''),     # 释义
                         kw.get('coca', 0),              # COCA频率
+                        kw.get('key_word', ''),         # 单词
+                        kw.get('subtitle_id', 0),       # 字幕ID
                         kw.get('is_selected', 0)        # 是否选中
                     ])
                 

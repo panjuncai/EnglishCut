@@ -24,7 +24,7 @@ def get_optimal_config():
         LOG.info("🚀 使用 NVIDIA GPU (CUDA) 加速")
     elif torch.backends.mps.is_available():
         device = "mps" 
-        model_name = "openai/whisper-base"  # 更快的模型适合 Mac
+        model_name = "openai/whisper-medium"  # 更快的模型适合 Mac
         batch_size = 8  # Mac M4 可以处理更大批次
         LOG.info("🚀 使用 Mac GPU (MPS) 加速 - 已针对 Mac M4 优化")
     else:
